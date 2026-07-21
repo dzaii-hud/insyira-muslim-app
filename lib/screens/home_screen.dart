@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:adhan/adhan.dart';
+import 'package:intl/intl.dart';
+
 import 'quran_screen.dart';
 import 'qibla_screen.dart';
 import 'kajian_screen.dart';
@@ -11,22 +17,196 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   int _selectedIndex = 0;
 
-  // --- VARIABEL UNTUK WAKTU SHOLAT ---
-  // Kamu bisa ubah nilai ini menjadi 'Subuh', 'Dzuhur', 'Ashar', 'Maghrib', atau 'Isya'
-  // untuk melihat gambarnya berubah.
-  final String _activePrayer = 'Dzuhur'; // Contoh: Dzuhur
+  // --- VARIABEL DATA ASLI (JADWAL SHOLAT & GPS) ---
+  String _locationName = "Mencari lokasi...";
+  PrayerTimes? _prayerTimes;
+  Prayer? _nextPrayer;
+  Timer? _timer;
+  String _countdownText = "--:--:--";
+  String _activePrayer = "Dzuhur";
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _getLocationAndPrayerTimes();
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      _updateCountdown();
     });
   }
 
-  // Fungsi penentu gambar berdasarkan waktu sholat
-  String _getBackgroundImage() {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_locationName == "GPS belum aktif" ||
+          _locationName == "Izin lokasi ditolak") {
+        _getLocationAndPrayerTimes();
+      }
+    }
+  }
+
+  Future<void> _getLocationAndPrayerTimes() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
+    if (!serviceEnabled) {
+      setState(() => _locationName = "GPS belum aktif");
+
+      if (!mounted) return;
+      await showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text(
+              'GPS Tidak Aktif',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF003527),
+              ),
+            ),
+            content: const Text(
+              'Jadwal sholat membutuhkan lokasi. Mohon aktifkan GPS di pengaturan HP kamu.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text(
+                  'Batal',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF003527),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await Geolocator.openLocationSettings();
+                },
+                child: const Text(
+                  'Aktifkan GPS',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        setState(() => _locationName = "Izin lokasi ditolak");
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      setState(() => _locationName = "Izin lokasi diblokir");
+      return;
+    }
+
+    Position position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
+    try {
+      final Geocoding geocoding = Geocoding();
+      List<Placemark> placemarks = await geocoding.placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      if (placemarks.isNotEmpty) {
+        setState(() {
+          _locationName = "${placemarks[0].locality}, ${placemarks[0].country}";
+        });
+      }
+    } catch (e) {
+      setState(() => _locationName = "Koordinat ditemukan");
+    }
+
+    final coordinates = Coordinates(position.latitude, position.longitude);
+    final params = CalculationMethod.singapore.getParameters();
+    params.madhab = Madhab.shafi;
+
+    setState(() {
+      _prayerTimes = PrayerTimes.today(coordinates, params);
+      _nextPrayer = _prayerTimes?.nextPrayer();
+      _activePrayer = _getPrayerName(
+        _prayerTimes?.currentPrayer() ?? Prayer.fajr,
+      );
+    });
+  }
+
+  void _updateCountdown() {
+    if (_prayerTimes == null ||
+        _nextPrayer == null ||
+        _nextPrayer == Prayer.none)
+      return;
+
+    final nextPrayerTime = _prayerTimes!.timeForPrayer(_nextPrayer!);
+    if (nextPrayerTime != null) {
+      final now = DateTime.now();
+      final diff = nextPrayerTime.difference(now);
+
+      if (diff.isNegative) {
+        setState(() {
+          _nextPrayer = _prayerTimes!.nextPrayer();
+          _activePrayer = _getPrayerName(
+            _prayerTimes?.currentPrayer() ?? Prayer.fajr,
+          );
+        });
+      } else {
+        String hours = diff.inHours.toString().padLeft(2, '0');
+        String minutes = (diff.inMinutes % 60).toString().padLeft(2, '0');
+        String seconds = (diff.inSeconds % 60).toString().padLeft(2, '0');
+
+        setState(() {
+          _countdownText = "-$hours:$minutes:$seconds";
+        });
+      }
+    }
+  }
+
+  String _getPrayerName(Prayer prayer) {
+    switch (prayer) {
+      case Prayer.fajr:
+        return "Subuh";
+      case Prayer.sunrise:
+        return "Terbit";
+      case Prayer.dhuhr:
+        return "Dzuhur";
+      case Prayer.asr:
+        return "Ashar";
+      case Prayer.maghrib:
+        return "Maghrib";
+      case Prayer.isha:
+        return "Isya";
+      default:
+        return "Subuh";
+    }
+  }
+
+  String _getBackgroundMap() {
     switch (_activePrayer.toLowerCase()) {
       case 'subuh':
         return 'assets/images/bg_subuh.png';
@@ -43,22 +223,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Fungsi penentu jam sholat (dummy data untuk UI)
-  String _getActiveTime() {
-    switch (_activePrayer.toLowerCase()) {
-      case 'subuh':
-        return '04:30';
-      case 'dzuhur':
-        return '12:00';
-      case 'ashar':
-        return '15:15';
-      case 'maghrib':
-        return '18:00';
-      case 'isya':
-        return '19:15';
-      default:
-        return '--:--';
-    }
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 
   @override
@@ -87,34 +255,24 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
 
-      body: _selectedIndex == 0
-          ? SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildPrayerTimeHeader(),
-                  const SizedBox(height: 25),
-                  _buildMenuGrid(),
-                  const SizedBox(height: 25),
-                  _buildKajianHariIni(),
-                  const SizedBox(height: 20),
-                  _buildLanjutMembaca(),
-                  const SizedBox(height: 40),
-                ],
-              ),
-            )
-          // --- TAMBAHKAN LOGIKA INI ---
-          : _selectedIndex == 1
-          ? const QuranScreen() // Memanggil halaman Al-Quran jika menu ke-2 diklik
-          : _selectedIndex == 2
-          ? const QiblaScreen() // Memanggil halaman Kiblat
-          : _selectedIndex == 3
-          ? const KajianScreen() // Memanggil halaman Kajian
-          : _selectedIndex == 4
-          ? const DzikirScreen()
-          : const Center(child: Text('Error: Halaman tidak ditemukan')),
-           
+      // --- BODY DENGAN ANIMASI TRANSISI ---
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.0, 0.05),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            ),
+          );
+        },
+        child: _buildBodyContent(),
+      ),
+
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
@@ -145,7 +303,58 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // --- FUNGSI PENGATUR HALAMAN ---
+  Widget _buildBodyContent() {
+    switch (_selectedIndex) {
+      case 0:
+        return SingleChildScrollView(
+          key: const ValueKey(0),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildPrayerTimeHeader(),
+              const SizedBox(height: 25),
+              _buildMenuGrid(),
+              const SizedBox(height: 25),
+              _buildKajianHariIni(),
+              const SizedBox(height: 20),
+              _buildLanjutMembaca(),
+              const SizedBox(height: 40),
+            ],
+          ),
+        );
+      case 1:
+        return const QuranScreen(key: ValueKey(1));
+      case 2:
+        return const QiblaScreen(key: ValueKey(2));
+      case 3:
+        return const KajianScreen(key: ValueKey(3));
+      case 4:
+        return const DzikirScreen(key: ValueKey(4));
+      default:
+        return const Center(
+          key: ValueKey('error'),
+          child: Text('Halaman tidak ditemukan'),
+        );
+    }
+  }
+
+  // --- WIDGET HEADER SHOLAT DINAMIS ---
   Widget _buildPrayerTimeHeader() {
+    String nextPrayerTimeString = "--:--";
+    String nextPrayerNameString = "Memuat...";
+
+    if (_prayerTimes != null &&
+        _nextPrayer != null &&
+        _nextPrayer != Prayer.none) {
+      final time = _prayerTimes!.timeForPrayer(_nextPrayer!);
+      if (time != null) {
+        nextPrayerTimeString = DateFormat('HH:mm').format(time);
+        nextPrayerNameString = _getPrayerName(_nextPrayer!);
+      }
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -168,9 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 topRight: Radius.circular(20),
               ),
               image: DecorationImage(
-                image: AssetImage(
-                  _getBackgroundImage(),
-                ), // MENGGUNAKAN GAMBAR DINAMIS
+                image: AssetImage(_getBackgroundMap()),
                 fit: BoxFit.cover,
               ),
             ),
@@ -202,44 +409,52 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           Text(
-                            _activePrayer,
+                            nextPrayerNameString,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 28,
                               fontWeight: FontWeight.bold,
                             ),
-                          ), // TEKS DINAMIS
+                          ),
                         ],
                       ),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            _getActiveTime(),
+                            nextPrayerTimeString,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 28,
                               fontWeight: FontWeight.bold,
                             ),
-                          ), // WAKTU DINAMIS
+                          ),
                           Text(
-                            'dalam 45 menit',
+                            _countdownText,
                             style: TextStyle(
                               color: Colors.white.withOpacity(0.8),
-                              fontSize: 12,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
                       ),
                     ],
                   ),
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.location_on, color: Colors.white, size: 16),
-                      SizedBox(width: 4),
+                      const Icon(
+                        Icons.location_on,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 4),
                       Text(
-                        'Jakarta, Indonesia',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
+                        _locationName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -247,17 +462,46 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 10),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildTimeItem('Subuh', '04:30', _activePrayer == 'Subuh'),
-                _buildTimeItem('Dzuhur', '12:00', _activePrayer == 'Dzuhur'),
-                _buildTimeItem('Ashar', '15:15', _activePrayer == 'Ashar'),
-                _buildTimeItem('Maghrib', '18:00', _activePrayer == 'Maghrib'),
-                _buildTimeItem('Isya', '19:15', _activePrayer == 'Isya'),
+                _buildTimeItem(
+                  'Subuh',
+                  _prayerTimes != null
+                      ? DateFormat('HH:mm').format(_prayerTimes!.fajr)
+                      : '--:--',
+                  _activePrayer == 'Subuh',
+                ),
+                _buildTimeItem(
+                  'Dzuhur',
+                  _prayerTimes != null
+                      ? DateFormat('HH:mm').format(_prayerTimes!.dhuhr)
+                      : '--:--',
+                  _activePrayer == 'Dzuhur',
+                ),
+                _buildTimeItem(
+                  'Ashar',
+                  _prayerTimes != null
+                      ? DateFormat('HH:mm').format(_prayerTimes!.asr)
+                      : '--:--',
+                  _activePrayer == 'Ashar',
+                ),
+                _buildTimeItem(
+                  'Maghrib',
+                  _prayerTimes != null
+                      ? DateFormat('HH:mm').format(_prayerTimes!.maghrib)
+                      : '--:--',
+                  _activePrayer == 'Maghrib',
+                ),
+                _buildTimeItem(
+                  'Isya',
+                  _prayerTimes != null
+                      ? DateFormat('HH:mm').format(_prayerTimes!.isha)
+                      : '--:--',
+                  _activePrayer == 'Isya',
+                ),
               ],
             ),
           ),
@@ -297,31 +541,55 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // --- WIDGET MENU TENGAH (Bisa Diklik) ---
   Widget _buildMenuGrid() {
     return Column(
       children: [
         Row(
           children: [
-            Expanded(child: _buildMenuItem(Icons.menu_book, 'Al-Quran')),
+            Expanded(
+              child: _buildMenuItem(
+                Icons.menu_book,
+                'Al-Quran',
+                () => _onItemTapped(1),
+              ),
+            ),
             const SizedBox(width: 15),
-            Expanded(child: _buildMenuItem(Icons.explore, 'Kiblat')),
+            Expanded(
+              child: _buildMenuItem(
+                Icons.explore,
+                'Kiblat',
+                () => _onItemTapped(2),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 15),
         Row(
           children: [
-            Expanded(child: _buildMenuItem(Icons.calendar_month, 'Kajian')),
+            Expanded(
+              child: _buildMenuItem(
+                Icons.calendar_month,
+                'Kajian',
+                () => _onItemTapped(3),
+              ),
+            ),
             const SizedBox(width: 15),
-            Expanded(child: _buildMenuItem(Icons.auto_awesome, 'Dzikir')),
+            Expanded(
+              child: _buildMenuItem(
+                Icons.auto_awesome,
+                'Dzikir',
+                () => _onItemTapped(4),
+              ),
+            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildMenuItem(IconData icon, String title) {
+  Widget _buildMenuItem(IconData icon, String title, VoidCallback onTap) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -333,27 +601,37 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: const BoxDecoration(
-              color: Color(0xFFE8F5E9),
-              shape: BoxShape.circle,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE8F5E9),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: const Color(0xFF1B4332), size: 28),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.black87,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
-            child: Icon(icon, color: Color(0xFF1B4332), size: 28),
           ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.black87,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -399,7 +677,6 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Gambar Thumbnail Video (pakai NetworkImage sementara)
               Container(
                 height: 150,
                 decoration: const BoxDecoration(
@@ -408,7 +685,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     topRight: Radius.circular(16),
                   ),
                   image: DecorationImage(
-                    // Bisa ganti URL ini dengan link gambar dari API kajian nantinya
                     image: NetworkImage(
                       'https://images.unsplash.com/photo-1590076215667-875d4efbf2b9?q=80&w=600&auto=format&fit=crop',
                     ),
@@ -474,9 +750,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 15),
-                    Row(
+                    const Row(
                       children: [
-                        const CircleAvatar(
+                        CircleAvatar(
                           backgroundColor: Color(0xFFD8EEDF),
                           radius: 14,
                           child: Text(
@@ -488,8 +764,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        const Text(
+                        SizedBox(width: 8),
+                        Text(
                           'Ustadz Abdullah',
                           style: TextStyle(
                             fontSize: 12,
