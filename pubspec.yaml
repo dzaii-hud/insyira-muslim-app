@@ -39,6 +39,7 @@ dependencies:
   adhan: ^2.0.0+1
   intl: ^0.20.3
   http: ^1.6.0
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
@@ -62,11 +63,19 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+
    #To add assets to your application, add an assets section, like this:
   assets:
-     - assets/images/
-     - assets/audios/
-     - assets/data/
+    - assets/images/
+    - assets/audios/
+    - assets/data/
+    - assets/fonts/
+
+   # 2. Daftarkan font-nya
+  fonts:
+    - family: LPMQ
+      fonts:
+        - asset: assets/fonts/lpmq.ttf
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

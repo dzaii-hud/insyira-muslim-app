@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Memanggil halaman detail surah
 import 'detail_surah_screen.dart';
@@ -19,10 +20,16 @@ class _QuranScreenState extends State<QuranScreen> {
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
 
+  // --- VARIABEL UNTUK MENAMPUNG DATA TERAKHIR DIBACA ---
+  String? lastReadSurah;
+  int? lastReadSurahNumber;
+  int? lastReadAyat;
+
   @override
   void initState() {
     super.initState();
     _fetchSurahData();
+    _loadLastRead(); // Panggil fungsi memori saat layar dibuka
   }
 
   @override
@@ -54,6 +61,16 @@ class _QuranScreenState extends State<QuranScreen> {
     }
   }
 
+  // --- FUNGSI MENARIK DATA BOOKMARK DARI MEMORI HP ---
+  Future<void> _loadLastRead() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      lastReadSurahNumber = prefs.getInt('last_surah_number');
+      lastReadSurah = prefs.getString('last_surah_name');
+      lastReadAyat = prefs.getInt('last_ayat');
+    });
+  }
+
   // --- FUNGSI PENCARIAN SURAH ---
   void _filterSurah(String query) {
     setState(() {
@@ -79,7 +96,7 @@ class _QuranScreenState extends State<QuranScreen> {
         children: [
           const SizedBox(height: 10),
           _buildSearchBar(),
-          _buildLastRead(),
+          _buildLastRead(), // Kotak hijau akan otomatis pakai data asli
           _buildListHeader(),
 
           Expanded(
@@ -165,23 +182,50 @@ class _QuranScreenState extends State<QuranScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Al-Mulk',
-                style: TextStyle(
+
+              // --- MENAMPILKAN NAMA SURAH DINAMIS ---
+              Text(
+                lastReadSurah != null ? lastReadSurah! : 'Belum ada',
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Ayat 14',
-                style: TextStyle(color: Colors.white70, fontSize: 14),
+
+              // --- MENAMPILKAN AYAT DINAMIS ---
+              Text(
+                lastReadAyat != null
+                    ? 'Ayat $lastReadAyat'
+                    : 'Tandai saat membaca',
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
             ],
           ),
+
+          // --- TOMBOL LANJUTKAN ---
           InkWell(
-            onTap: () {},
+            onTap: () {
+              if (lastReadSurahNumber != null) {
+                // Jika ada data, bawa ke surah tersebut
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        DetailSurahScreen(nomorSurah: lastReadSurahNumber!),
+                  ),
+                ).then((_) => _loadLastRead()); // Auto-refresh saat kembali
+              } else {
+                // Jika belum ada data, beri tahu user
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Belum ada ayat yang ditandai 🔖'),
+                    backgroundColor: Color(0xFF904D00),
+                  ),
+                );
+              }
+            },
             borderRadius: BorderRadius.circular(30),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -249,13 +293,17 @@ class _QuranScreenState extends State<QuranScreen> {
   Widget _buildSurahItem(dynamic surah) {
     return InkWell(
       onTap: () {
-        // Navigasi ke halaman detail baca ayat
+        // --- NAVIGASI DENGAN AUTO-REFRESH ---
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => DetailSurahScreen(nomorSurah: surah['nomor']),
           ),
-        );
+        ).then((_) {
+          // Ketika user menekan tombol 'Back' dari halaman bacaan,
+          // fungsi ini akan jalan untuk me-refresh data Terakhir Dibaca
+          _loadLastRead();
+        });
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -323,7 +371,7 @@ class _QuranScreenState extends State<QuranScreen> {
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF003527),
-                fontFamily: 'Amiri',
+                fontFamily: 'LPMQ', // Font sudah kuubah ke LPMQ biar rapi!
               ),
             ),
           ],
