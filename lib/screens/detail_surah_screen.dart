@@ -650,7 +650,7 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'Usap layar, atau Tahan teks untuk Tandai',
+                        'Usap layar, atau Tahan ayat untuk Tandai',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade500,

@@ -4,7 +4,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:adhan/adhan.dart';
 import 'package:intl/intl.dart';
-
+import 'package:shared_preferences/shared_preferences.dart';
+import 'detail_surah_screen.dart';
 import 'quran_screen.dart';
 import 'qibla_screen.dart';
 import 'kajian_screen.dart';
@@ -28,6 +29,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _countdownText = "--:--:--";
   String _activePrayer = "Dzuhur";
 
+  // ====== 1. TAMBAHKAN VARIABEL MEMORI BACAAN DI SINI ======
+  String? lastReadSurah;
+  int? lastReadSurahNumber;
+  int? lastReadAyat;
+  // =========================================================
+
   @override
   void initState() {
     super.initState();
@@ -37,7 +44,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _updateCountdown();
     });
+
+    // ====== 2. PANGGIL FUNGSI MEMORI SAAT APLIKASI DIBUKA ======
+    _loadLastRead();
+    // ===========================================================
   }
+
+  // ====== 3. TAMBAHKAN FUNGSI PENARIK DATA INI ======
+  Future<void> _loadLastRead() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      lastReadSurahNumber = prefs.getInt('last_surah_number');
+      lastReadSurah = prefs.getString('last_surah_name');
+      lastReadAyat = prefs.getInt('last_ayat');
+    });
+  }
+  // ==================================================
 
   @override
   void dispose() {
@@ -53,6 +75,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _locationName == "Izin lokasi ditolak") {
         _getLocationAndPrayerTimes();
       }
+      // Refresh riwayat bacaan saat user buka aplikasi lagi dari background
+      _loadLastRead();
     }
   }
 
@@ -801,7 +825,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
             TextButton(
-              onPressed: () {},
+              onPressed: () {
+                // Bisa kamu arahkan ke halaman Quran Screen (Daftar Surah)
+              },
               child: const Text(
                 'Lihat Semua',
                 style: TextStyle(color: Color(0xFF1B4332)),
@@ -809,85 +835,108 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ],
         ),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade200),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.02),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 45,
-                height: 45,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8F9FA),
-                  borderRadius: BorderRadius.circular(10),
+
+        // --- KOTAK BACAAN (BISA DIKLIK) ---
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () {
+            if (lastReadSurahNumber != null) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) =>
+                      DetailSurahScreen(nomorSurah: lastReadSurahNumber!),
                 ),
-                child: const Center(
-                  child: Text(
-                    '67',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1B4332),
-                    ),
+              ).then((_) => _loadLastRead()); // Refresh otomatis saat kembali
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Belum ada ayat yang ditandai 🔖'),
+                  backgroundColor: Color(0xFF904D00),
+                ),
+              );
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade200),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                // 1. KOTAK NOMOR SURAH
+                Container(
+                  width: 45,
+                  height: 45,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F9FA),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                ),
-              ),
-              const SizedBox(width: 15),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Al-Mulk',
-                      style: TextStyle(
+                  child: Center(
+                    child: Text(
+                      lastReadSurahNumber != null
+                          ? lastReadSurahNumber.toString()
+                          : '-',
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
+                        color: Color(0xFF1B4332),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Ayat 12 • 45% Selesai',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  const Text(
-                    'الملك',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: 60,
-                    child: LinearProgressIndicator(
-                      value: 0.45,
-                      backgroundColor: Colors.grey.shade200,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        Color(0xFF904D00),
+                const SizedBox(width: 15),
+
+                // 2. NAMA SURAH & AYAT
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        lastReadSurah ?? 'Belum ada riwayat',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                      const SizedBox(height: 4),
+                      Text(
+                        lastReadAyat != null
+                            ? 'Terakhir dibaca: Ayat $lastReadAyat'
+                            : 'Mulai baca Al-Quran sekarang...',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                ),
+
+                // 3. ICON ARAH (Ganti tulisan Arab)
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1B4332).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Color(0xFF1B4332),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
