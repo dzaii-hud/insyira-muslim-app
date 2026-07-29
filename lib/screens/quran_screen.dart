@@ -212,8 +212,10 @@ class _QuranScreenState extends State<QuranScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        DetailSurahScreen(nomorSurah: lastReadSurahNumber!),
+                    builder: (context) => DetailSurahScreen(
+                      nomorSurah: lastReadSurahNumber!,
+                      initialAyat: lastReadAyat, // <--- TAMBAHKAN BARIS INI
+                    ),
                   ),
                 ).then((_) => _loadLastRead()); // Auto-refresh saat kembali
               } else {

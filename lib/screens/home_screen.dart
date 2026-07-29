@@ -826,7 +826,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
             TextButton(
               onPressed: () {
-                // Bisa kamu arahkan ke halaman Quran Screen (Daftar Surah)
+                // Bisa diarahkan ke tab Quran
               },
               child: const Text(
                 'Lihat Semua',
@@ -836,108 +836,129 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
 
-        // --- KOTAK BACAAN (BISA DIKLIK) ---
-        InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () {
-            if (lastReadSurahNumber != null) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      DetailSurahScreen(nomorSurah: lastReadSurahNumber!),
-                ),
-              ).then((_) => _loadLastRead()); // Refresh otomatis saat kembali
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Belum ada ayat yang ditandai 🔖'),
-                  backgroundColor: Color(0xFF904D00),
-                ),
-              );
+        // --- FUTURE BUILDER: Solusi Anti-Lambat Saat Pindah Tab ---
+        FutureBuilder<SharedPreferences>(
+          future: SharedPreferences.getInstance(),
+          builder: (context, snapshot) {
+            // Mengambil data paling segar langsung dari memori HP
+            String? freshSurah = lastReadSurah;
+            int? freshNumber = lastReadSurahNumber;
+            int? freshAyat = lastReadAyat;
+
+            if (snapshot.hasData) {
+              freshSurah =
+                  snapshot.data!.getString('last_surah_name') ?? lastReadSurah;
+              freshNumber =
+                  snapshot.data!.getInt('last_surah_number') ??
+                  lastReadSurahNumber;
+              freshAyat = snapshot.data!.getInt('last_ayat') ?? lastReadAyat;
             }
-          },
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                // 1. KOTAK NOMOR SURAH
-                Container(
-                  width: 45,
-                  height: 45,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8F9FA),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Center(
-                    child: Text(
-                      lastReadSurahNumber != null
-                          ? lastReadSurahNumber.toString()
-                          : '-',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1B4332),
+
+            // --- KOTAK BACAAN (BISA DIKLIK) ---
+            return InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () {
+                if (freshNumber != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => DetailSurahScreen(
+                        nomorSurah: freshNumber!,
+                        initialAyat:
+                            freshAyat, // <--- INI KUNCI BIAR LANGSUNG LOMPAT!
                       ),
                     ),
-                  ),
+                  ).then((_) => _loadLastRead());
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Belum ada ayat yang ditandai 🔖'),
+                      backgroundColor: Color(0xFF904D00),
+                    ),
+                  );
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF003527), // Warna Hijau Gelap Mewah
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF064E3B).withOpacity(0.15),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 15),
-
-                // 2. NAMA SURAH & AYAT
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        lastReadSurah ?? 'Belum ada riwayat',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                child: Row(
+                  children: [
+                    // 1. KOTAK NOMOR SURAH (Kaca Transparan)
+                    Container(
+                      width: 45,
+                      height: 45,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(
+                        child: Text(
+                          freshNumber != null ? freshNumber.toString() : '-',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        lastReadAyat != null
-                            ? 'Terakhir dibaca: Ayat $lastReadAyat'
-                            : 'Mulai baca Al-Quran sekarang...',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                    const SizedBox(width: 15),
 
-                // 3. ICON ARAH (Ganti tulisan Arab)
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1B4332).withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Color(0xFF1B4332),
-                  ),
+                    // 2. NAMA SURAH & AYAT (Teks Putih)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            freshSurah ?? 'Belum ada riwayat',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            freshAyat != null
+                                ? 'Terakhir dibaca: Ayat $freshAyat'
+                                : 'Mulai baca Al-Quran sekarang...',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // 3. ICON ARAH (Kaca Transparan)
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ],
     );
