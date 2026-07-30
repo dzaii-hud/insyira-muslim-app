@@ -1,7 +1,77 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:flutter/services.dart';
 
-class DzikirScreen extends StatelessWidget {
+class DzikirScreen extends StatefulWidget {
   const DzikirScreen({super.key});
+
+  @override
+  State<DzikirScreen> createState() => _DzikirScreenState();
+}
+
+class _DzikirScreenState extends State<DzikirScreen> {
+  // State untuk mengontrol UI
+  bool _isPagi = true; // true = Pagi, false = Sore
+  double _arabFontSize = 26.0; // Ukuran font default
+
+  // State untuk Data
+  List<dynamic> _dzikirList = [];
+  final Map<int, int> _counters = {}; // Menyimpan jumlah klik tasbih tiap item
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDzikirData();
+  }
+
+  // Fungsi membaca file JSON lokal
+  Future<void> _loadDzikirData() async {
+    try {
+      final String response = await rootBundle.loadString('assets/dzikir.json');
+      final data = await json.decode(response);
+
+      setState(() {
+        _dzikirList = _isPagi ? data['pagi'] : data['sore'];
+        _counters.clear(); // Reset tasbih saat pindah waktu
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint("Gagal memuat JSON: $e");
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // Fungsi ganti tab Pagi/Petang
+  void _toggleWaktu(bool isPagi) {
+    if (_isPagi != isPagi) {
+      setState(() {
+        _isPagi = isPagi;
+        _isLoading = true;
+      });
+      _loadDzikirData();
+    }
+  }
+
+  // Fungsi ubah ukuran font
+  void _changeFontSize(double step) {
+    setState(() {
+      _arabFontSize += step;
+      // Batasi ukuran minimum dan maksimum
+      if (_arabFontSize < 20.0) _arabFontSize = 20.0;
+      if (_arabFontSize > 40.0) _arabFontSize = 40.0;
+    });
+  }
+
+  // Fungsi tasbih (counter)
+  void _incrementCounter(int index, int target) {
+    setState(() {
+      int current = _counters[index] ?? 0;
+      if (current < target) {
+        _counters[index] = current + 1;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -9,7 +79,6 @@ class DzikirScreen extends StatelessWidget {
       children: [
         // --- KONTEN UTAMA ---
         SingleChildScrollView(
-          // Padding bawah ekstra besar agar konten tidak tertutup Audio Player
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 120),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -20,18 +89,35 @@ class DzikirScreen extends StatelessWidget {
               const SizedBox(height: 30),
               _buildControls(),
               const SizedBox(height: 15),
-              _buildDzikirCard(),
+
+              // Render List Dzikir Dinamis
+              if (_isLoading)
+                const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF003527),),
+                )
+              else if (_dzikirList.isEmpty)
+                const Center(child: Text("Data dzikir kosong"))
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _dzikirList.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 20),
+                  itemBuilder: (context, index) {
+                    return _buildDzikirCard(_dzikirList[index], index);
+                  },
+                ),
             ],
           ),
         ),
 
-        // --- FLOATING AUDIO PLAYER ---
+        // --- FLOATING AUDIO PLAYER (Statis) ---
         Positioned(bottom: 20, left: 20, right: 20, child: _buildAudioPlayer()),
       ],
     );
   }
 
-  // --- WIDGET HEADER ---
   Widget _buildHeader() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,78 +139,31 @@ class DzikirScreen extends StatelessWidget {
     );
   }
 
-  // --- WIDGET PILIHAN PAGI & PETANG ---
   Widget _buildSelectionCards() {
     return Row(
       children: [
-        // KARTU AKTIF (PAGI)
+        // TAB PAGI
         Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            decoration: BoxDecoration(
-              color: const Color(0xFF003527),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF003527).withOpacity(0.3),
-                  blurRadius: 15,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: const Column(
-              children: [
-                Icon(Icons.wb_twilight, color: Color(0xFF95D3BA), size: 32),
-                SizedBox(height: 12),
-                Text(
-                  'Pagi',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Dzikir Pagi',
-                  style: TextStyle(color: Color(0xFF95D3BA), fontSize: 10),
-                ),
-              ],
+          child: GestureDetector(
+            onTap: () => _toggleWaktu(true),
+            child: _buildTabCard(
+              title: 'Pagi',
+              subtitle: 'Dzikir Pagi',
+              icon: Icons.wb_twilight,
+              isActive: _isPagi,
             ),
           ),
         ),
         const SizedBox(width: 15),
-        // KARTU TIDAK AKTIF (PETANG)
+        // TAB PETANG
         Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: const Column(
-              children: [
-                Icon(
-                  Icons.nights_stay_outlined,
-                  color: Color(0xFF003527),
-                  size: 32,
-                ),
-                SizedBox(height: 12),
-                Text(
-                  'Petang',
-                  style: TextStyle(
-                    color: Color(0xFF003527),
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'Dzikir Petang',
-                  style: TextStyle(color: Colors.grey, fontSize: 10),
-                ),
-              ],
+          child: GestureDetector(
+            onTap: () => _toggleWaktu(false),
+            child: _buildTabCard(
+              title: 'Petang',
+              subtitle: 'Dzikir Petang',
+              icon: Icons.nights_stay_outlined,
+              isActive: !_isPagi,
             ),
           ),
         ),
@@ -132,7 +171,58 @@ class DzikirScreen extends StatelessWidget {
     );
   }
 
-  // --- WIDGET KONTROL TEKS & PROGRESS ---
+  // Widget Bantuan untuk Tab Kartu (Biar Kodenya Bersih)
+  Widget _buildTabCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool isActive,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFF003527) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: isActive ? null : Border.all(color: Colors.grey.shade200),
+        boxShadow: isActive
+            ? [
+                BoxShadow(
+                  color: const Color(0xFF003527).withOpacity(0.3),
+                  blurRadius: 15,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : [],
+      ),
+      child: Column(
+        children: [
+          Icon(
+            icon,
+            color: isActive ? const Color(0xFF95D3BA) : const Color(0xFF003527),
+            size: 32,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: TextStyle(
+              color: isActive ? Colors.white : const Color(0xFF003527),
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: isActive ? const Color(0xFF95D3BA) : Colors.grey,
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildControls() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -143,9 +233,9 @@ class DzikirScreen extends StatelessWidget {
             color: const Color(0xFFE8F5E9),
             borderRadius: BorderRadius.circular(20),
           ),
-          child: const Text(
-            '1 dari 24',
-            style: TextStyle(
+          child: Text(
+            '${_dzikirList.length} Bacaan', // Menampilkan jumlah total dinamis
+            style: const TextStyle(
               color: Color(0xFF003527),
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -155,7 +245,7 @@ class DzikirScreen extends StatelessWidget {
         Row(
           children: [
             TextButton(
-              onPressed: () {},
+              onPressed: () => _changeFontSize(-2.0), // Tombol Perkecil Font
               child: const Text(
                 'A-',
                 style: TextStyle(
@@ -166,7 +256,7 @@ class DzikirScreen extends StatelessWidget {
               ),
             ),
             TextButton(
-              onPressed: () {},
+              onPressed: () => _changeFontSize(2.0), // Tombol Perbesar Font
               child: const Text(
                 'A+',
                 style: TextStyle(
@@ -182,14 +272,19 @@ class DzikirScreen extends StatelessWidget {
     );
   }
 
-  // --- WIDGET KARTU DZIKIR ---
-  Widget _buildDzikirCard() {
+  Widget _buildDzikirCard(Map<String, dynamic> dzikir, int index) {
+    int target = dzikir['target'] ?? 1;
+    int currentCount = _counters[index] ?? 0;
+    bool isCompleted = currentCount >= target;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.grey.shade100),
+        border: Border.all(
+          color: isCompleted ? const Color(0xFF95D3BA) : Colors.grey.shade100,
+        ), // Highlight hijau jika selesai
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.02),
@@ -201,7 +296,6 @@ class DzikirScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Garis Dekoratif Atas
           Center(
             child: Container(
               width: 40,
@@ -214,17 +308,18 @@ class DzikirScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // Header Judul & Bookmark
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'AYATUL KURSI',
-                style: TextStyle(
-                  color: Color(0xFF904D00),
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.5,
+              Expanded(
+                child: Text(
+                  dzikir['judul'],
+                  style: const TextStyle(
+                    color: Color(0xFF904D00),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.5,
+                  ),
                 ),
               ),
               const Icon(Icons.bookmark_border, color: Colors.grey, size: 20),
@@ -232,21 +327,20 @@ class DzikirScreen extends StatelessWidget {
           ),
           const SizedBox(height: 30),
 
-          // Teks Arab
-          const Text(
-            'اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ',
+          Text(
+            dzikir['arab'],
             textAlign: TextAlign.right,
             style: TextStyle(
-              fontSize: 26,
+              fontSize: _arabFontSize, // Font Size Dinamis!
               fontWeight: FontWeight.bold,
-              color: Color(0xFF003527),
-              height: 1.8,
+              color: const Color(0xFF003527),
+              fontFamily: 'LPMQ',
+              height: 2.2,
             ),
             textDirection: TextDirection.rtl,
           ),
           const SizedBox(height: 30),
 
-          // Transliterasi (Kotak abu-abu)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -257,7 +351,7 @@ class DzikirScreen extends StatelessWidget {
               ),
             ),
             child: Text(
-              "Allahu la ilaha illa Huwa, Al-Haiyul-Qaiyum. La ta'khudhuhu sinatun wa la nawm...",
+              dzikir['latin'],
               style: TextStyle(
                 fontSize: 14,
                 fontStyle: FontStyle.italic,
@@ -267,9 +361,8 @@ class DzikirScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // Terjemahan
           Text(
-            '"Allah, tidak ada tuhan selain Dia. Yang Maha Hidup, Yang terus-menerus mengurus (makhluk-Nya)..."',
+            dzikir['arti'],
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey.shade800,
@@ -280,7 +373,7 @@ class DzikirScreen extends StatelessWidget {
           const Divider(),
           const SizedBox(height: 10),
 
-          // Footer & Tombol Counter
+          // Footer & Tombol Counter Tasbih
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -289,27 +382,40 @@ class DzikirScreen extends StatelessWidget {
                   const Icon(Icons.repeat, color: Colors.grey, size: 16),
                   const SizedBox(width: 8),
                   Text(
-                    'Dibaca 1 kali',
+                    'Dibaca $target kali',
                     style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   ),
                 ],
               ),
-              // Tombol Bulat Counter
-              Container(
-                width: 50,
-                height: 50,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF003527),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Text(
-                    '1',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+              GestureDetector(
+                onTap: () => _incrementCounter(index, target),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: isCompleted
+                        ? const Color(0xFF95D3BA)
+                        : const Color(
+                            0xFF003527,
+                          ), // Berubah warna jika target capai
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: isCompleted
+                        ? const Icon(
+                            Icons.check,
+                            color: Color(0xFF003527),
+                            size: 24,
+                          )
+                        : Text(
+                            currentCount.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
               ),
@@ -320,7 +426,6 @@ class DzikirScreen extends StatelessWidget {
     );
   }
 
-  // --- WIDGET FLOATING AUDIO PLAYER ---
   Widget _buildAudioPlayer() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -341,7 +446,6 @@ class DzikirScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Info Audio
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -360,7 +464,6 @@ class DzikirScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              // Kontrol Putar
               Row(
                 children: [
                   const Icon(
@@ -392,7 +495,6 @@ class DzikirScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          // Progress Bar Line
           Row(
             children: [
               Text(
@@ -406,7 +508,7 @@ class DzikirScreen extends StatelessWidget {
                   backgroundColor: Colors.white24,
                   valueColor: const AlwaysStoppedAnimation<Color>(
                     Color(0xFFFFDCC3),
-                  ), // Warna cream/orange lembut
+                  ),
                   borderRadius: BorderRadius.circular(5),
                   minHeight: 4,
                 ),
