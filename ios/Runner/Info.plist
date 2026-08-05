@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<key>NSLocationWhenInUseUsageDescription</key>
+    <string>Aplikasi membutuhkan lokasi untuk menentukan arah Kiblat.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Aplikasi membutuhkan kamera untuk fitur AR Kiblat.</string>
+	
 </dict>
 </plist>

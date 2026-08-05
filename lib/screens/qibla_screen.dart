@@ -4,6 +4,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:camera/camera.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class QiblaScreen extends StatefulWidget {
   const QiblaScreen({super.key});
@@ -21,6 +23,11 @@ class _QiblaScreenState extends State<QiblaScreen> {
   double _qiblaDirection = 0.0;
   String _compassDirection = "";
 
+  // --- VARIABEL KAMERA AR ---
+  bool _isCameraMode = false;
+  CameraController? _cameraController;
+  bool _isCameraInitialized = false;
+
   // Koordinat mutlak Ka'bah (Mekah)
   final double _kaabaLat = 21.422487;
   final double _kaabaLon = 39.826206;
@@ -29,6 +36,68 @@ class _QiblaScreenState extends State<QiblaScreen> {
   void initState() {
     super.initState();
     _initializeQibla();
+  }
+
+  @override
+  void dispose() {
+    // Wajib: Matikan kamera saat pindah halaman agar baterai tidak boros
+    _cameraController?.dispose();
+    super.dispose();
+  }
+
+  // --- FUNGSI MENGHIDUPKAN/MEMATIKAN KAMERA AR ---
+  Future<void> _toggleCameraMode() async {
+    // Jika kamera sedang menyala, matikan.
+    if (_isCameraMode) {
+      setState(() {
+        _isCameraMode = false;
+      });
+      return;
+    }
+
+    // Jika kamera mati, minta izin lalu nyalakan
+    PermissionStatus status = await Permission.camera.request();
+
+    if (status.isGranted) {
+      try {
+        // Ambil daftar kamera yang ada di HP
+        final cameras = await availableCameras();
+        // Cari kamera belakang
+        final backCamera = cameras.firstWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.back,
+        );
+
+        // Inisialisasi kamera
+        _cameraController = CameraController(
+          backCamera,
+          ResolutionPreset.high,
+          enableAudio: false,
+        );
+        await _cameraController!.initialize();
+
+        if (mounted) {
+          setState(() {
+            _isCameraInitialized = true;
+            _isCameraMode = true;
+          });
+        }
+      } catch (e) {
+        debugPrint("Gagal menyalakan kamera: $e");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Terjadi kesalahan saat membuka kamera'),
+            ),
+          );
+        }
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Izin kamera dibutuhkan untuk mode AR')),
+        );
+      }
+    }
   }
 
   Future<void> _initializeQibla() async {
@@ -72,17 +141,18 @@ class _QiblaScreenState extends State<QiblaScreen> {
       return;
     }
 
-    if (mounted)
+    if (mounted) {
       setState(() {
         _hasPermission = true;
       });
+    }
 
     // 3. Ambil koordinat GPS saat ini
     Position position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
 
-    // 4. Ambil Nama Kota secara otomatis berdasarkan koordinat GPS
+    // 4. Ambil Nama Kota
     String cityName = await _getCityName(position.latitude, position.longitude);
     if (mounted) {
       setState(() {
@@ -103,13 +173,13 @@ class _QiblaScreenState extends State<QiblaScreen> {
     _qiblaDirection = _calculateQibla(position.latitude, position.longitude);
     _compassDirection = _getCompassDirectionText(_qiblaDirection);
 
-    if (mounted)
+    if (mounted) {
       setState(() {
         _isLoading = false;
       });
+    }
   }
 
-  // --- FUNGSI MENGUBAH KOORDINAT JADI NAMA KOTA ---
   Future<String> _getCityName(double lat, double lon) async {
     try {
       final url = Uri.parse(
@@ -143,7 +213,6 @@ class _QiblaScreenState extends State<QiblaScreen> {
     return "Indonesia";
   }
 
-  // --- RUMUS MATEMATIKA SUDUT KIBLAT ---
   double _calculateQibla(double currentLat, double currentLon) {
     double latRad = currentLat * math.pi / 180.0;
     double lonRad = currentLon * math.pi / 180.0;
@@ -160,7 +229,6 @@ class _QiblaScreenState extends State<QiblaScreen> {
     return (qiblaDeg + 360.0) % 360.0;
   }
 
-  // --- MENGUBAH DERAJAT JADI MATA ANGIN ---
   String _getCompassDirectionText(double degrees) {
     if (degrees >= 337.5 || degrees < 22.5) return 'U';
     if (degrees >= 22.5 && degrees < 67.5) return 'TL';
@@ -175,32 +243,90 @@ class _QiblaScreenState extends State<QiblaScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20.0),
-        child: _isLoading
-            ? const SizedBox(
-                height: 400,
-                child: Center(
-                  child: CircularProgressIndicator(color: Color(0xFF1B4332)),
+    return Stack(
+      children: [
+        // --- LAYER 1: BACKGROUND (Kamera atau Warna Putih/Abu) ---
+        if (_isCameraMode && _isCameraInitialized && _cameraController != null)
+          Positioned.fill(child: CameraPreview(_cameraController!))
+        else
+          Positioned.fill(
+            child: Container(
+              color: const Color(0xFFF9F9F9),
+            ), // Background default
+          ),
+
+        // --- LAYER 2: KONTEN UI UTAMA ---
+        Positioned.fill(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20.0),
+              child: _isLoading
+                  ? const SizedBox(
+                      height: 400,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF1B4332),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      children: [
+                        const SizedBox(height: 20),
+                        _buildHeaderInfo(),
+                        const SizedBox(height: 50),
+
+                        if (_hasPermission) _buildCompass(),
+                        if (!_hasPermission)
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            margin: const EdgeInsets.symmetric(horizontal: 40),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Text(
+                              "Silakan aktifkan GPS dan Izin Lokasi",
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+
+                        const SizedBox(height: 50),
+                        if (_hasPermission) _buildDegreesCard(),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+            ),
+          ),
+        ),
+
+        // --- LAYER 3: TOMBOL KAMERA AR (Pojok Kanan Atas) ---
+        Positioned(
+          top: 30,
+          right: 20,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            decoration: BoxDecoration(
+              color: _isCameraMode ? Colors.redAccent : Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
                 ),
-              )
-            : Column(
-                children: [
-                  const SizedBox(height: 20),
-                  _buildHeaderInfo(),
-                  const SizedBox(height: 50),
-
-                  if (_hasPermission) _buildCompass(),
-                  if (!_hasPermission)
-                    const Text("Silakan aktifkan GPS dan Izin Lokasi"),
-
-                  const SizedBox(height: 50),
-                  if (_hasPermission) _buildDegreesCard(),
-                  const SizedBox(height: 40),
-                ],
+              ],
+            ),
+            child: IconButton(
+              tooltip: 'Mode Kamera AR',
+              icon: Icon(
+                _isCameraMode ? Icons.camera_alt : Icons.camera_alt_outlined,
+                color: _isCameraMode ? Colors.white : const Color(0xFF1B4332),
               ),
-      ),
+              onPressed: _toggleCameraMode,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -214,12 +340,13 @@ class _QiblaScreenState extends State<QiblaScreen> {
 
     return Column(
       children: [
-        const Text(
+        Text(
           'KIBLAT',
           style: TextStyle(
             fontSize: 12,
             letterSpacing: 3.0,
-            color: Colors.grey,
+            // Jika mode kamera nyala, ubah warna teks jadi putih agar terbaca
+            color: _isCameraMode ? Colors.white70 : Colors.grey,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -227,18 +354,18 @@ class _QiblaScreenState extends State<QiblaScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.location_on_outlined,
-              color: Colors.black87,
+              color: _isCameraMode ? Colors.white : Colors.black87,
               size: 24,
             ),
             const SizedBox(width: 8),
             Text(
               _locationName,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF1B4332),
+                color: _isCameraMode ? Colors.white : const Color(0xFF1B4332),
               ),
             ),
           ],
@@ -247,12 +374,15 @@ class _QiblaScreenState extends State<QiblaScreen> {
         RichText(
           text: TextSpan(
             text: 'Jarak ke Makkah: ',
-            style: const TextStyle(color: Colors.grey, fontSize: 14),
+            style: TextStyle(
+              color: _isCameraMode ? Colors.white70 : Colors.grey,
+              fontSize: 14,
+            ),
             children: [
               TextSpan(
                 text: '$distanceStr km',
-                style: const TextStyle(
-                  color: Color(0xFF1B4332),
+                style: TextStyle(
+                  color: _isCameraMode ? Colors.white : const Color(0xFF1B4332),
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -269,11 +399,12 @@ class _QiblaScreenState extends State<QiblaScreen> {
         width: 320,
         height: 320,
         decoration: BoxDecoration(
-          color: Colors.white,
+          // BERI EFEK TRANSPARAN SAAT KAMERA MENYALA
+          color: _isCameraMode ? Colors.white.withOpacity(0.8) : Colors.white,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: const Color(0x0A003527), // Setara opacity 0.04
+              color: const Color(0x0A003527),
               blurRadius: 40,
               spreadRadius: 10,
               offset: const Offset(0, 10),
@@ -314,14 +445,13 @@ class _QiblaScreenState extends State<QiblaScreen> {
                           border: Border.all(
                             color: const Color(0x269E9E9E),
                             width: 1,
-                          ), // Setara grey dengan opacity 0.15
+                          ),
                         ),
                       ),
                       _buildRotatedSquare(0),
                       _buildRotatedSquare(math.pi / 6),
                       _buildRotatedSquare(math.pi / 3),
 
-                      // --- INI BAGIAN YANG KELEBIHAN KURUNG KEMARIN ---
                       const Positioned(
                         top: 35,
                         child: Text(
@@ -386,7 +516,7 @@ class _QiblaScreenState extends State<QiblaScreen> {
                                   BoxShadow(
                                     color: Color(0x261B4332),
                                     blurRadius: 15,
-                                  ), // Setara opacity 0.15
+                                  ),
                                 ],
                               ),
                             ),
@@ -400,7 +530,7 @@ class _QiblaScreenState extends State<QiblaScreen> {
                                   colors: [
                                     Color(0x991B4332),
                                     Color(0x001B4332),
-                                  ], // Setara opacity 0.6 ke 0.0
+                                  ],
                                 ),
                                 borderRadius: BorderRadius.circular(2),
                               ),
@@ -418,12 +548,10 @@ class _QiblaScreenState extends State<QiblaScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0x1A9E9E9E),
-                    ), // Setara grey opacity 0.1
+                    border: Border.all(color: const Color(0x1A9E9E9E)),
                     boxShadow: const [
                       BoxShadow(color: Color(0x05000000), blurRadius: 10),
-                    ], // Setara black opacity 0.02
+                    ],
                   ),
                   child: Center(
                     child: Container(
@@ -438,7 +566,7 @@ class _QiblaScreenState extends State<QiblaScreen> {
                         ),
                         boxShadow: const [
                           BoxShadow(color: Color(0x4D904D00), blurRadius: 5),
-                        ], // Setara opacity 0.3
+                        ],
                       ),
                     ),
                   ),
@@ -468,7 +596,8 @@ class _QiblaScreenState extends State<QiblaScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        // BERI EFEK TRANSPARAN SAAT KAMERA MENYALA
+        color: _isCameraMode ? Colors.white.withOpacity(0.8) : Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey.shade100),
         boxShadow: const [
