@@ -35,6 +35,23 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     _fetchDetailSurah();
   }
 
+  // --- FUNGSI MELUNCUR KE AYAT YANG DITANDAI ---
+  void _jumpToBookmarkedAyah() {
+    if (widget.initialAyat == null) return;
+
+    // Cek apakah surat punya Bismillah (selain Al-Fatihah & At-Taubah)
+    final bool hasBismillah = widget.nomorSurah != 1 && widget.nomorSurah != 9;
+    final int headerCount = hasBismillah ? 2 : 1;
+
+    if (_itemScrollController.isAttached) {
+      _itemScrollController.scrollTo(
+        index: (widget.initialAyat! - 1) + headerCount,
+        duration: const Duration(milliseconds: 800), // Meluncur cepat 0.8 detik
+        curve: Curves.easeInOutCubic,
+      );
+    }
+  }
+
   Future<void> _fetchDetailSurah() async {
     try {
       final response = await http.get(
@@ -205,11 +222,36 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
         ),
       ),
 
-      // Bar Navigasi Statis Bawah (Hanya Muncul di Mode Terjemahan)
+      // --- TOMBOL KAPSUL LOMPAT AYAT ---
+      floatingActionButton: widget.initialAyat != null
+          ? Padding(
+              // BANTALAN DINAMIS: 40 di Mushaf, 0 di Terjemahan
+              padding: EdgeInsets.only(bottom: _isMushafMode ? 50.0 : 0.0),
+              child: FloatingActionButton.extended(
+                onPressed: _jumpToBookmarkedAyah,
+                backgroundColor: const Color(0xFF003527),
+                elevation: 4,
+                icon: const Icon(
+                  Icons.bookmark,
+                  color: Color(0xFF95D3BA),
+                  size: 18,
+                ),
+                label: Text(
+                  'Ke Ayat ${widget.initialAyat}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            )
+          : null,
+      // --- BAR NAVIGASI BAWAH (Pindahkan ke sini, SEBELUM tutup Scaffold) ---
       bottomNavigationBar: (!_isLoading && _surahData != null && !_isMushafMode)
           ? _buildStickyNavigationBar()
           : null,
-    );
+    ); // <--- TUTUP SCAFFOLD-NYA BARU MUNCUL DI SINI (PALING AKHIR)
   }
 
   // ==========================================
