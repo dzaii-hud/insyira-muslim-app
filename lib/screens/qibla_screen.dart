@@ -23,6 +23,9 @@ class _QiblaScreenState extends State<QiblaScreen> {
   double _qiblaDirection = 0.0;
   String _compassDirection = "";
 
+  // Variabel penangkap arah HP (Wajib untuk mode AR)
+  double? _heading;
+
   // --- VARIABEL KAMERA AR ---
   bool _isCameraMode = false;
   CameraController? _cameraController;
@@ -36,6 +39,15 @@ class _QiblaScreenState extends State<QiblaScreen> {
   void initState() {
     super.initState();
     _initializeQibla();
+
+    // Listener tambahan KHUSUS untuk pergerakan AR
+    FlutterCompass.events?.listen((event) {
+      if (mounted) {
+        setState(() {
+          _heading = event.heading;
+        });
+      }
+    });
   }
 
   @override
@@ -47,7 +59,6 @@ class _QiblaScreenState extends State<QiblaScreen> {
 
   // --- FUNGSI MENGHIDUPKAN/MEMATIKAN KAMERA AR ---
   Future<void> _toggleCameraMode() async {
-    // Jika kamera sedang menyala, matikan.
     if (_isCameraMode) {
       setState(() {
         _isCameraMode = false;
@@ -55,19 +66,15 @@ class _QiblaScreenState extends State<QiblaScreen> {
       return;
     }
 
-    // Jika kamera mati, minta izin lalu nyalakan
     PermissionStatus status = await Permission.camera.request();
 
     if (status.isGranted) {
       try {
-        // Ambil daftar kamera yang ada di HP
         final cameras = await availableCameras();
-        // Cari kamera belakang
         final backCamera = cameras.firstWhere(
           (camera) => camera.lensDirection == CameraLensDirection.back,
         );
 
-        // Inisialisasi kamera
         _cameraController = CameraController(
           backCamera,
           ResolutionPreset.high,
@@ -104,7 +111,6 @@ class _QiblaScreenState extends State<QiblaScreen> {
     bool serviceEnabled;
     LocationPermission permission;
 
-    // 1. Cek apakah GPS hidup
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       if (mounted) {
@@ -116,7 +122,6 @@ class _QiblaScreenState extends State<QiblaScreen> {
       return;
     }
 
-    // 2. Cek izin aplikasi
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -147,12 +152,10 @@ class _QiblaScreenState extends State<QiblaScreen> {
       });
     }
 
-    // 3. Ambil koordinat GPS saat ini
     Position position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
 
-    // 4. Ambil Nama Kota
     String cityName = await _getCityName(position.latitude, position.longitude);
     if (mounted) {
       setState(() {
@@ -160,7 +163,6 @@ class _QiblaScreenState extends State<QiblaScreen> {
       });
     }
 
-    // 5. Hitung Jarak ke Mekah (dalam KM)
     double distanceInMeters = Geolocator.distanceBetween(
       position.latitude,
       position.longitude,
@@ -169,7 +171,6 @@ class _QiblaScreenState extends State<QiblaScreen> {
     );
     _distanceToMecca = distanceInMeters / 1000;
 
-    // 6. Hitung Arah/Sudut Kiblat (Bearing)
     _qiblaDirection = _calculateQibla(position.latitude, position.longitude);
     _compassDirection = _getCompassDirectionText(_qiblaDirection);
 
@@ -249,54 +250,13 @@ class _QiblaScreenState extends State<QiblaScreen> {
         if (_isCameraMode && _isCameraInitialized && _cameraController != null)
           Positioned.fill(child: CameraPreview(_cameraController!))
         else
-          Positioned.fill(
-            child: Container(
-              color: const Color(0xFFF9F9F9),
-            ), // Background default
-          ),
+          Positioned.fill(child: Container(color: const Color(0xFFF9F9F9))),
 
         // --- LAYER 2: KONTEN UI UTAMA ---
         Positioned.fill(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20.0),
-              child: _isLoading
-                  ? const SizedBox(
-                      height: 400,
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: Color(0xFF1B4332),
-                        ),
-                      ),
-                    )
-                  : Column(
-                      children: [
-                        const SizedBox(height: 20),
-                        _buildHeaderInfo(),
-                        const SizedBox(height: 50),
-
-                        if (_hasPermission) _buildCompass(),
-                        if (!_hasPermission)
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            margin: const EdgeInsets.symmetric(horizontal: 40),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.9),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Text(
-                              "Silakan aktifkan GPS dan Izin Lokasi",
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-
-                        const SizedBox(height: 50),
-                        if (_hasPermission) _buildDegreesCard(),
-                        const SizedBox(height: 40),
-                      ],
-                    ),
-            ),
-          ),
+          child: _isCameraMode
+              ? _buildGoogleStyleARView()
+              : _buildStandard2DView(),
         ),
 
         // --- LAYER 3: TOMBOL KAMERA AR (Pojok Kanan Atas) ---
@@ -306,7 +266,7 @@ class _QiblaScreenState extends State<QiblaScreen> {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             decoration: BoxDecoration(
-              color: _isCameraMode ? Colors.redAccent : Colors.white,
+              color: _isCameraMode ? Colors.blue : Colors.white,
               shape: BoxShape.circle,
               boxShadow: const [
                 BoxShadow(
@@ -330,6 +290,51 @@ class _QiblaScreenState extends State<QiblaScreen> {
     );
   }
 
+  // =======================================================================
+  // UI 1: KODE ASLIMU UNTUK MODE 2D BIASA (TIDAK ADA YANG DIUBAH 100%)
+  // =======================================================================
+
+  Widget _buildStandard2DView() {
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20.0),
+        child: _isLoading
+            ? const SizedBox(
+                height: 400,
+                child: Center(
+                  child: CircularProgressIndicator(color: Color(0xFF1B4332)),
+                ),
+              )
+            : Column(
+                children: [
+                  const SizedBox(height: 20),
+                  _buildHeaderInfo(),
+                  const SizedBox(height: 50),
+
+                  if (_hasPermission) _buildCompass(),
+                  if (!_hasPermission)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      margin: const EdgeInsets.symmetric(horizontal: 40),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Text(
+                        "Silakan aktifkan GPS dan Izin Lokasi",
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+
+                  const SizedBox(height: 50),
+                  if (_hasPermission) _buildDegreesCard(),
+                  const SizedBox(height: 40),
+                ],
+              ),
+      ),
+    );
+  }
+
   Widget _buildHeaderInfo() {
     String distanceStr = _distanceToMecca
         .toStringAsFixed(0)
@@ -340,13 +345,12 @@ class _QiblaScreenState extends State<QiblaScreen> {
 
     return Column(
       children: [
-        Text(
+        const Text(
           'KIBLAT',
           style: TextStyle(
             fontSize: 12,
             letterSpacing: 3.0,
-            // Jika mode kamera nyala, ubah warna teks jadi putih agar terbaca
-            color: _isCameraMode ? Colors.white70 : Colors.grey,
+            color: Colors.grey,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -354,18 +358,18 @@ class _QiblaScreenState extends State<QiblaScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
+            const Icon(
               Icons.location_on_outlined,
-              color: _isCameraMode ? Colors.white : Colors.black87,
+              color: Colors.black87,
               size: 24,
             ),
             const SizedBox(width: 8),
             Text(
               _locationName,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: _isCameraMode ? Colors.white : const Color(0xFF1B4332),
+                color: Color(0xFF1B4332),
               ),
             ),
           ],
@@ -374,15 +378,12 @@ class _QiblaScreenState extends State<QiblaScreen> {
         RichText(
           text: TextSpan(
             text: 'Jarak ke Makkah: ',
-            style: TextStyle(
-              color: _isCameraMode ? Colors.white70 : Colors.grey,
-              fontSize: 14,
-            ),
+            style: const TextStyle(color: Colors.grey, fontSize: 14),
             children: [
               TextSpan(
                 text: '$distanceStr km',
-                style: TextStyle(
-                  color: _isCameraMode ? Colors.white : const Color(0xFF1B4332),
+                style: const TextStyle(
+                  color: Color(0xFF1B4332),
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -399,8 +400,7 @@ class _QiblaScreenState extends State<QiblaScreen> {
         width: 320,
         height: 320,
         decoration: BoxDecoration(
-          // BERI EFEK TRANSPARAN SAAT KAMERA MENYALA
-          color: _isCameraMode ? Colors.white.withOpacity(0.8) : Colors.white,
+          color: Colors.white,
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
@@ -579,12 +579,12 @@ class _QiblaScreenState extends State<QiblaScreen> {
     );
   }
 
-  Widget _buildRotatedSquare(double angle) {
+  Widget _buildRotatedSquare(double angle, [double size = 210]) {
     return Transform.rotate(
       angle: angle,
       child: Container(
-        width: 210,
-        height: 210,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           border: Border.all(color: const Color(0x269E9E9E), width: 1),
         ),
@@ -596,8 +596,7 @@ class _QiblaScreenState extends State<QiblaScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
       decoration: BoxDecoration(
-        // BERI EFEK TRANSPARAN SAAT KAMERA MENYALA
-        color: _isCameraMode ? Colors.white.withOpacity(0.8) : Colors.white,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey.shade100),
         boxShadow: const [
@@ -645,6 +644,304 @@ class _QiblaScreenState extends State<QiblaScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // =======================================================================
+  // UI 2: MODE KAMERA (PIN KA'BAH MELAYANG + KOMPAS ASLIMU DI BAWAH)
+  // =======================================================================
+
+  Widget _buildGoogleStyleARView() {
+    double diff = _qiblaDirection - (_heading ?? 0);
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+
+    double horizontalOffset = diff * 15;
+
+    return Stack(
+      children: [
+        // 1. Jalur Biru dan Ikon Ka'bah Melayang
+        Positioned.fill(
+          child: Transform.translate(
+            offset: Offset(horizontalOffset, 0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Spacer(),
+                _buildKaabaPin(),
+                Container(
+                  width: 60,
+                  height: MediaQuery.of(context).size.height * 0.40,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        const Color(0xFF0078D7),
+                        const Color(0xFF0078D7).withOpacity(0.0),
+                      ],
+                    ),
+                  ),
+                  child: const Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 20),
+                      child: Icon(
+                        Icons.keyboard_double_arrow_up,
+                        color: Colors.white,
+                        size: 50,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // 2. MENGGUNAKAN KOMPAS 2D ASLIMU (Bukan UFO 3D) DI BAGIAN BAWAH
+        Positioned(bottom: 60, left: 0, right: 0, child: _buildAR2DCompass()),
+
+        // 3. Panah Petunjuk Kiri/Kanan (Jika Ka'bah keluar layar)
+        if (diff.abs() > 10)
+          Positioned(
+            left: diff < 0 ? 20 : null,
+            right: diff > 0 ? 20 : null,
+            top: MediaQuery.of(context).size.height / 2 - 30,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: Colors.black54,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                diff < 0 ? Icons.arrow_back_ios_new : Icons.arrow_forward_ios,
+                color: Colors.white,
+                size: 40,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildKaabaPin() {
+    return Column(
+      children: [
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            const Icon(Icons.location_on, size: 120, color: Color(0xFF004481)),
+            Positioned(
+              top: 20,
+              child: Container(
+                width: 35,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(height: 5, color: const Color(0xFFFFD700)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
+          ),
+          child: Text(
+            '${_distanceToMecca.toStringAsFixed(0)} km',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Ini adalah salinan Kompas Aslimu, ukurannya disesuaikan sedikit (160)
+  // dan kuberi efek transparan (opacity: 0.85) agar kamera di belakangnya kelihatan!
+  Widget _buildAR2DCompass() {
+    return Center(
+      child: Container(
+        width: 160, // UKURAN UTAMA DIKECILKAN JAUH
+        height: 160,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.85),
+          shape: BoxShape.circle,
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)],
+        ),
+        child: StreamBuilder<CompassEvent>(
+          stream: FlutterCompass.events,
+          builder: (context, snapshot) {
+            double? deviceHeading = snapshot.data?.heading;
+            if (deviceHeading == null) return const SizedBox.shrink();
+
+            double compassRotationRad = -deviceHeading * (math.pi / 180);
+            double qiblaRotationRad = _qiblaDirection * (math.pi / 180);
+
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                Transform.rotate(
+                  angle: compassRotationRad,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 130,
+                        height: 130, // Lingkaran dalam dikecilkan
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0x409E9E9E),
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                      // Pakai ukuran 120 untuk ornamen kotak
+                      _buildRotatedSquare(0, 120),
+                      _buildRotatedSquare(math.pi / 6, 120),
+                      _buildRotatedSquare(math.pi / 3, 120),
+
+                      // Teks mata angin juga dikecilkan
+                      const Positioned(
+                        top: 10,
+                        child: Text(
+                          'U',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: Color(0xFF1B4332),
+                          ),
+                        ),
+                      ),
+                      const Positioned(
+                        bottom: 10,
+                        child: Text(
+                          'S',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                      const Positioned(
+                        right: 10,
+                        child: Text(
+                          'T',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                      const Positioned(
+                        left: 10,
+                        child: Text(
+                          'B',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+
+                      Transform.rotate(
+                        angle: qiblaRotationRad,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24, // Ikon hijau dikecilkan
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFD8EEDF),
+                                  width: 2,
+                                ),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x261B4332),
+                                    blurRadius: 5,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              width: 2,
+                              height: 45, // Garis dikecilkan
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0x991B4332),
+                                    Color(0x001B4332),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(height: 69), // Jarak di-adjust
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Titik bulat tengah
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0x1A9E9E9E)),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x05000000), blurRadius: 5),
+                    ],
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFFE8F5E9),
+                          width: 2,
+                        ),
+                        boxShadow: const [
+                          BoxShadow(color: Color(0x4D904D00), blurRadius: 3),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
