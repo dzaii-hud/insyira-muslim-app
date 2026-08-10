@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'screens/home_screen.dart'; // Import file home_screen.dart
+import 'screens/login_screen.dart';
 
 void main() {
   runApp(const InsyiraApp());
@@ -20,7 +21,7 @@ class InsyiraApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home:
-          const HomeScreen(), // Mengarah ke class yang ada di home_screen.dart
+          const LoginScreen(), // Mengarah ke class yang ada di login_screen.dart
     );
   }
 }
