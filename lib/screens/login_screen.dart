@@ -271,13 +271,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         _buildSocialButton(
                           logoPath:
-                              'assets/images/Google png.jpeg', // Logo Google
+                              'assets/images/google_logo.png', // Logo Google
                           onTap: () {},
                         ),
                         const SizedBox(width: 24), // JARAKNYA DIBUAT DEKAT
                         _buildSocialButton(
                           logoPath:
-                              'assets/images/Apple Logo PNG.jpeg', // Logo Apple
+                              'assets/images/apple_logo.png', // Logo Apple
                           onTap: () {},
                         ),
                       ],

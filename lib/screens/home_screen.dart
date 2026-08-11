@@ -258,23 +258,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.transparent, // Mengikuti bawaan aslimu
         elevation: 0,
+        scrolledUnderElevation:
+            0, // Mencegah warna AppBar berubah saat di-scroll
+        // --- 1. TAMBAHAN FOTO PROFIL (KIRI) ---
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+          child: GestureDetector(
+            onTap: () {
+              // Nanti diarahkan ke halaman setting/profil
+            },
+            child: const CircleAvatar(
+              // Foto dummy, nanti kita ganti dari database
+              backgroundImage: NetworkImage(
+                'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop',
+              ),
+            ),
+          ),
+        ),
+        leadingWidth: 60, // Biar fotonya ada jarak dan tidak gepeng
+        // --- 2. JUDUL (TENGAH) ---
         title: const Text(
           'Insyira',
           style: TextStyle(
-            color: Color(0xFF1B4332),
+            color: Color(0xFF1B4332), // Warna aslimu
             fontWeight: FontWeight.bold,
             fontSize: 24,
           ),
         ),
+        centerTitle:
+            true, // WAJIB ADA: Biar tulisan Insyira persis ada di tengah
+        // --- 3. IKON NOTIFIKASI (KANAN) ---
         actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.notifications_none,
-              color: Color(0xFF1B4332),
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: IconButton(
+              icon: const Icon(
+                Icons.notifications_none, // Ikon aslimu
+                color: Color(0xFF1B4332), // Warna aslimu
+                size: 28,
+              ),
+              onPressed: () {},
             ),
-            onPressed: () {},
           ),
         ],
       ),
