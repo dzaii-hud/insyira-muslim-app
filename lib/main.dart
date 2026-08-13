@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/home_screen.dart'; // Import file home_screen.dart
-import 'screens/login_screen.dart';
+import 'screens/splash_screen.dart'; // <-- 1. INI TAMBAHAN IMPORT-NYA
 
 void main() {
   runApp(const InsyiraApp());
@@ -20,8 +19,7 @@ class InsyiraApp extends StatelessWidget {
         ), // Tema hijau gelap
         useMaterial3: true,
       ),
-      home:
-          const LoginScreen(), // Mengarah ke class yang ada di login_screen.dart
+      home: const SplashScreen(), // <-- 2. INI KITA UBAH JADI SPLASH SCREEN
     );
   }
 }
