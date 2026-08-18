@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'package:insyira_muslim_app/widgets/floating_audio_player.dart';
 
 class DzikirScreen extends StatefulWidget {
   const DzikirScreen({super.key});
