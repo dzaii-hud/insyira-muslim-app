@@ -375,6 +375,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _buildKajianHariIni(),
               const SizedBox(height: 20),
               _buildLanjutMembaca(),
+
+              // --- PENAMBAHAN WIDGET BARU DI SINI ---
+              const SizedBox(height: 25),
+              _buildKajianOnline(),
+              const SizedBox(height: 25),
+              _buildSaluranLive(),
               const SizedBox(height: 40),
             ],
           ),
@@ -830,12 +836,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     const SizedBox(height: 15),
                     Row(
                       children: [
-                        CircleAvatar(
-                          backgroundColor: const Color(
-                            0xFF003D2D,
-                          ), // surface-variant
+                        const CircleAvatar(
+                          backgroundColor: Color(0xFF003D2D), // surface-variant
                           radius: 14,
-                          child: const Text(
+                          child: Text(
                             'UA',
                             style: TextStyle(
                               color: Color(0xFFFBBF24), // gold-leaf
@@ -929,9 +933,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 }
               },
               child: Container(
-                padding: const EdgeInsets.all(
-                  16,
-                ), // Disesuaikan sedikit agar rapi
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: const Color(0xFF002117), // surface-container-low
                   borderRadius: BorderRadius.circular(16),
@@ -972,9 +974,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            freshSurah ?? 'Belum ada riwayat',
+                            freshSurah ?? 'Belum ada bacaan',
                             style: const TextStyle(
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
                             ),
@@ -982,33 +984,247 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           const SizedBox(height: 4),
                           Text(
                             freshAyat != null
-                                ? 'Terakhir dibaca: Ayat $freshAyat'
-                                : 'Mulai baca Al-Quran sekarang...',
+                                ? 'Ayat $freshAyat'
+                                : 'Mulai membaca Al-Quran',
                             style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFFBEC9C2), // on-surface-variant
+                              fontSize: 14,
+                              color: Color(0xFFBEC9C2),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF003D2D), // surface-variant
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.arrow_forward_ios,
-                        size: 16,
-                        color: Color(0xFFFBBF24), // gold-leaf
-                      ),
+                    const Icon(
+                      Icons.arrow_forward_ios,
+                      color: Color(0xFFFBBF24),
+                      size: 16,
                     ),
                   ],
                 ),
               ),
             );
           },
+        ),
+      ],
+    );
+  }
+
+  // ==========================================
+  // WIDGET BARU: KAJIAN ONLINE (Sesuai Referensi Gambar)
+  // ==========================================
+  Widget _buildKajianOnline() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Kajian Online',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            TextButton(
+              onPressed: () {},
+              child: const Text(
+                'Lihat Semua',
+                style: TextStyle(
+                  color: Color(0xFF8BD6B6),
+                ), // Mengikuti aksen hijau
+              ),
+            ),
+          ],
+        ),
+        SizedBox(
+          height: 200,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: 3, // Dibuat 3 item dummy untuk simulasi scroll
+            separatorBuilder: (context, index) => const SizedBox(width: 16),
+            itemBuilder: (context, index) {
+              return Container(
+                width: 260,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF002117), // surface-container-low
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF003D2D)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Gambar Thumbnail
+                    Container(
+                      height: 110,
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(16),
+                        ),
+                        image: DecorationImage(
+                          image: NetworkImage(
+                            index == 0
+                                ? 'https://images.unsplash.com/photo-1609599006353-e629af92ce32?q=80&w=600&auto=format&fit=crop'
+                                : 'https://images.unsplash.com/photo-1584227092147-36e676135838?q=80&w=600&auto=format&fit=crop',
+                          ),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    // Judul & Pemateri
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            index == 0
+                                ? 'Riyadush Shalihin 2.103: Tidak Memberikan Wejangan Setiap Saat'
+                                : 'Kitab Tauhid #4: Takut Syirik',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              height: 1.2,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Ustadz Dr. Firanda Andirja, MA',
+                            style: const TextStyle(
+                              color: Color(0xFFBEC9C2),
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ==========================================
+  // WIDGET BARU: SALURAN LIVE (Sesuai Referensi Gambar)
+  // ==========================================
+  Widget _buildSaluranLive() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Saluran Live',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 140,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: 2,
+            separatorBuilder: (context, index) => const SizedBox(width: 16),
+            itemBuilder: (context, index) {
+              bool isMadinah = index == 0;
+              return Container(
+                width: 220,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: const Color(
+                    0xFF003D2D,
+                  ), // surface-variant sebagai fallback
+                  image: DecorationImage(
+                    image: NetworkImage(
+                      isMadinah
+                          ? 'https://images.unsplash.com/photo-1591461947262-4217197b91ba?q=80&w=600&auto=format&fit=crop' // Masjid Nabawi
+                          : 'https://images.unsplash.com/photo-1565552643954-1eb956276dc0?q=80&w=600&auto=format&fit=crop', // Masjidil Haram
+                    ),
+                    fit: BoxFit.cover,
+                    // Menambahkan filter gelap agar text tetap terbaca
+                    colorFilter: ColorFilter.mode(
+                      Colors.black.withOpacity(0.5),
+                      BlendMode.darken,
+                    ),
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    // Badge Live
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.circle, color: Colors.white, size: 8),
+                            SizedBox(width: 4),
+                            Text(
+                              'Live',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Teks Judul Channel
+                    Positioned(
+                      top: 40,
+                      left: 12,
+                      child: Text(
+                        isMadinah ? 'Live Madinah' : 'Live Mekkah',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    // Icon Play (sebagai pemanis seperti di gambar)
+                    const Center(
+                      child: Icon(
+                        Icons
+                            .image_outlined, // Sesuai placeholder di gambar asli
+                        color: Colors.white54,
+                        size: 40,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ],
     );

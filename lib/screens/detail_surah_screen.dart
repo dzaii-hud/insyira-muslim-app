@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart'; // Tambahan untuk mendeteksi Long Press
+import 'package:flutter/gestures.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart'; // Tambahan untuk memori lokal
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 class DetailSurahScreen extends StatefulWidget {
@@ -22,31 +22,162 @@ class DetailSurahScreen extends StatefulWidget {
 class _DetailSurahScreenState extends State<DetailSurahScreen> {
   Map<String, dynamic>? _surahData;
   bool _isLoading = true;
-  // --- REMOTE CONTROL UNTUK SCROLL ---
+
+  // --- REMOTE CONTROL UNTUK SCROLL (MODE TERJEMAHAN) ---
   final ItemScrollController _itemScrollController = ItemScrollController();
-  bool _hasScrolled = false; // Mencegah layarnya scroll berkali-kali
+  bool _hasScrolled = false;
 
   // --- VARIABEL KONTROL MODE MUSHAF / TERJEMAHAN ---
   bool _isMushafMode = false; // Default: False (Mode Terjemahan)
 
+  // --- CONTROLLER HALAMAN MUSHAF (MODE BUKU FISIK) ---
+  late PageController _pageController;
+  int _currentPageIndex = 0;
+
+  // Database Pemetaan Halaman Awal untuk 114 Surah (Standar Mushaf Madinah)
+  final List<int> _surahStartPage = [
+    1,
+    2,
+    50,
+    77,
+    106,
+    128,
+    151,
+    177,
+    187,
+    208,
+    221,
+    235,
+    249,
+    255,
+    262,
+    267,
+    282,
+    293,
+    305,
+    312,
+    322,
+    332,
+    342,
+    350,
+    359,
+    367,
+    377,
+    385,
+    396,
+    404,
+    411,
+    415,
+    418,
+    428,
+    434,
+    440,
+    446,
+    453,
+    458,
+    467,
+    477,
+    483,
+    489,
+    496,
+    499,
+    502,
+    507,
+    511,
+    515,
+    518,
+    520,
+    523,
+    526,
+    528,
+    531,
+    534,
+    537,
+    542,
+    545,
+    549,
+    551,
+    553,
+    554,
+    556,
+    558,
+    560,
+    562,
+    564,
+    566,
+    568,
+    570,
+    572,
+    574,
+    575,
+    577,
+    578,
+    580,
+    582,
+    583,
+    585,
+    586,
+    587,
+    587,
+    589,
+    590,
+    591,
+    591,
+    592,
+    593,
+    594,
+    595,
+    595,
+    596,
+    596,
+    597,
+    597,
+    598,
+    598,
+    599,
+    599,
+    600,
+    600,
+    601,
+    601,
+    601,
+    602,
+    602,
+    602,
+    603,
+    603,
+    603,
+    604,
+    604,
+    604,
+  ];
+
   @override
   void initState() {
     super.initState();
+    // Inisialisasi halaman buku agar langsung melompat ke halaman awal Surah yang dipilih
+    _currentPageIndex = _surahStartPage[widget.nomorSurah - 1] - 1;
+    _pageController = PageController(initialPage: _currentPageIndex);
+
     _fetchDetailSurah();
   }
 
-  // --- FUNGSI MELUNCUR KE AYAT YANG DITANDAI ---
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  // --- FUNGSI MELUNCUR KE AYAT YANG DITANDAI (KHUSUS TERJEMAHAN) ---
   void _jumpToBookmarkedAyah() {
     if (widget.initialAyat == null) return;
-
-    // Cek apakah surat punya Bismillah (selain Al-Fatihah & At-Taubah)
     final bool hasBismillah = widget.nomorSurah != 1 && widget.nomorSurah != 9;
     final int headerCount = hasBismillah ? 2 : 1;
 
     if (_itemScrollController.isAttached) {
       _itemScrollController.scrollTo(
         index: (widget.initialAyat! - 1) + headerCount,
-        duration: const Duration(milliseconds: 800), // Meluncur cepat 0.8 detik
+        duration: const Duration(milliseconds: 800),
         curve: Curves.easeInOutCubic,
       );
     }
@@ -73,17 +204,37 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     }
   }
 
-  // --- FUNGSI MENGUBAH ANGKA LATIN KE ANGKA ARAB ---
-  String _toArabicNumber(String number) {
-    const english = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-    const arabic = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    for (int i = 0; i < english.length; i++) {
-      number = number.replaceAll(english[i], arabic[i]);
+  // --- FUNGSI SIMPAN BOOKMARK (TERAKHIR DIBACA) ---
+  Future<void> _saveBookmark(int nomorAyat) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('last_surah_number', widget.nomorSurah);
+      await prefs.setString('last_surah_name', _surahData!['namaLatin']);
+      await prefs.setInt('last_ayat', nomorAyat);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '🔖 Ditandai: ${_surahData!['namaLatin']} Ayat $nomorAyat',
+          ),
+          backgroundColor: const Color(0xFF003527),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Gagal menandai ayat, coba lagi.'),
+          backgroundColor: Colors.red.shade800,
+        ),
+      );
     }
-    return number;
   }
 
-  // --- FUNGSI PINDAH HALAMAN (SWIPE) ---
+  // --- FUNGSI PINDAH HALAMAN SURAH ---
   void _goToSurah(int nomor) {
     if (nomor >= 1 && nomor <= 114) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -106,173 +257,123 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     }
   }
 
-  // --- FUNGSI SIMPAN BOOKMARK (TERAKHIR DIBACA) ---
-  Future<void> _saveBookmark(int nomorAyat) async {
-    try {
-      // <--- INI DIA YANG HILANG TADI
-      final prefs = await SharedPreferences.getInstance();
-
-      // Menyimpan 3 data penting ke memori HP
-      await prefs.setInt('last_surah_number', widget.nomorSurah);
-      await prefs.setString('last_surah_name', _surahData!['namaLatin']);
-      await prefs.setInt('last_ayat', nomorAyat);
-
-      if (!mounted) return;
-
-      // Munculkan notifikasi sukses
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '🔖 Ditandai: ${_surahData!['namaLatin']} Ayat $nomorAyat',
-          ),
-          backgroundColor: const Color(0xFF003527),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      // Jika terjadi error, kita bisa melihatnya di terminal VS Code
-      debugPrint("GAGAL MENYIMPAN BOOKMARK: $e");
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Gagal menandai ayat, coba lagi.'),
-          backgroundColor: Colors.red.shade800,
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: _isMushafMode ? Colors.white : const Color(0xFFF8F9FA),
 
-      // --- APPBAR KHUSUS ---
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios,
-            color: Color(0xFF003527),
-            size: 20,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          _surahData != null ? _surahData!['namaLatin'] : 'Memuat...',
-          style: const TextStyle(
-            color: Color(0xFF003527),
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          // TOMBOL GANTI MODE (MUSHAF / TERJEMAHAN)
-          IconButton(
-            tooltip: 'Ganti Mode Baca',
-            icon: Icon(
-              _isMushafMode ? Icons.view_list_rounded : Icons.menu_book_rounded,
-              color: const Color(0xFF003527),
-            ),
-            onPressed: () {
-              setState(() {
-                _isMushafMode = !_isMushafMode; // Tukar mode
-              });
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings, color: Color(0xFF003527)),
-            onPressed: () {},
-          ),
-        ],
-      ),
-
-      // --- WRAPPER PENDETEKSI SWIPE (BERLAKU UNTUK KEDUA MODE) ---
-      body: GestureDetector(
-        onHorizontalDragEnd: (details) {
-          int sensitivity = 300;
-          if (details.primaryVelocity! > sensitivity) {
-            _goToSurah(
-              widget.nomorSurah - 1,
-            ); // Geser ke kanan -> Surah Sebelumnya
-          } else if (details.primaryVelocity! < -sensitivity) {
-            _goToSurah(
-              widget.nomorSurah + 1,
-            ); // Geser ke kiri -> Surah Selanjutnya
-          }
-        },
-        child: Container(
-          color: Colors
-              .transparent, // Wajib agar deteksi swipe berfungsi di seluruh layar
-          width: double.infinity,
-          height: double.infinity,
-          child: _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF003527)),
-                )
-              : _surahData == null
-              ? const Center(child: Text('Gagal memuat data.'))
-              : _isMushafMode
-              ? _buildMushafView() // Panggil Tampilan Mushaf
-              : _buildTranslationView(), // Panggil Tampilan Terjemahan
-        ),
-      ),
-
-      // --- TOMBOL KAPSUL LOMPAT AYAT ---
-      floatingActionButton: widget.initialAyat != null
-          ? Padding(
-              // BANTALAN DINAMIS: 40 di Mushaf, 0 di Terjemahan
-              padding: EdgeInsets.only(bottom: _isMushafMode ? 50.0 : 0.0),
-              child: FloatingActionButton.extended(
-                onPressed: _jumpToBookmarkedAyah,
-                backgroundColor: const Color(0xFF003527),
-                elevation: 4,
+      // --- APPBAR (DISEMBUNYIKAN SAAT MODE MUSHAF) ---
+      appBar: _isMushafMode
+          ? null
+          : AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
                 icon: const Icon(
-                  Icons.bookmark,
-                  color: Color(0xFF95D3BA),
-                  size: 18,
+                  Icons.arrow_back_ios,
+                  color: Color(0xFF003527),
+                  size: 20,
                 ),
-                label: Text(
-                  'Ke Ayat ${widget.initialAyat}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                onPressed: () => Navigator.pop(context),
+              ),
+              title: Text(
+                _surahData != null ? _surahData!['namaLatin'] : 'Memuat...',
+                style: const TextStyle(
+                  color: Color(0xFF003527),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
+              ),
+              centerTitle: true,
+              actions: [
+                IconButton(
+                  tooltip: 'Ganti Mode Baca',
+                  icon: const Icon(
+                    Icons.menu_book_rounded,
+                    color: Color(0xFF003527),
                   ),
+                  onPressed: () {
+                    setState(() {
+                      _isMushafMode = true; // Tukar ke Mushaf Mode
+                    });
+                  },
+                ),
+              ],
+            ),
+
+      // --- BODY UTAMA ---
+      body: SafeArea(
+        child: _isMushafMode
+            ? _buildMushafView() // Panggil Tampilan Mushaf Halaman (Images)
+            : GestureDetector(
+                // SWIPE SURAH HANYA AKTIF DI MODE TERJEMAHAN
+                onHorizontalDragEnd: (details) {
+                  int sensitivity = 300;
+                  if (details.primaryVelocity! > sensitivity) {
+                    _goToSurah(widget.nomorSurah - 1);
+                  } else if (details.primaryVelocity! < -sensitivity) {
+                    _goToSurah(widget.nomorSurah + 1);
+                  }
+                },
+                child: Container(
+                  color: Colors.transparent,
+                  width: double.infinity,
+                  height: double.infinity,
+                  child: _isLoading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF003527),
+                          ),
+                        )
+                      : _surahData == null
+                      ? const Center(child: Text('Gagal memuat data.'))
+                      : _buildTranslationView(),
+                ),
+              ),
+      ),
+
+      // --- TOMBOL KAPSUL (LOMPAT AYAT) HANYA DI MODE TERJEMAHAN ---
+      floatingActionButton: (widget.initialAyat != null && !_isMushafMode)
+          ? FloatingActionButton.extended(
+              onPressed: _jumpToBookmarkedAyah,
+              backgroundColor: const Color(0xFF003527),
+              elevation: 4,
+              icon: const Icon(
+                Icons.bookmark,
+                color: Color(0xFF95D3BA),
+                size: 18,
+              ),
+              label: Text(
+                'Ke Ayat ${widget.initialAyat}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
                 ),
               ),
             )
           : null,
-      // --- BAR NAVIGASI BAWAH (Pindahkan ke sini, SEBELUM tutup Scaffold) ---
+
+      // --- BAR NAVIGASI BAWAH (Hanya di mode terjemahan) ---
       bottomNavigationBar: (!_isLoading && _surahData != null && !_isMushafMode)
           ? _buildStickyNavigationBar()
           : null,
-    ); // <--- TUTUP SCAFFOLD-NYA BARU MUNCUL DI SINI (PALING AKHIR)
+    );
   }
 
   // ==========================================
-  // TAMPILAN 1: MODE TERJEMAHAN (SUDAH ANTI-BUG SCROLL)
+  // TAMPILAN 1: MODE TERJEMAHAN (TIDAK ADA YANG DIUBAH)
   // ==========================================
   Widget _buildTranslationView() {
     final List<dynamic> ayatList = _surahData!['ayat'];
-
-    // Cek apakah surah ini punya Bismillah (Bukan Al-Fatihah & At-Taubah)
     final bool hasBismillah = widget.nomorSurah != 1 && widget.nomorSurah != 9;
-
-    // Jika ada bismillah, maka elemen sebelum ayat ada 2 (Header + Bismillah). Kalau tidak ada, cuma 1 (Header).
     final int headerCount = hasBismillah ? 2 : 1;
 
-    // --- LOGIKA OTOMATIS SCROLL MELUNCUR ---
     if (widget.initialAyat != null && !_hasScrolled) {
       _hasScrolled = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         Future.delayed(const Duration(milliseconds: 500), () {
           if (_itemScrollController.isAttached) {
-            // Rumus meluncur: (Nomor Ayat - 1) + Jumlah Header di atasnya
             _itemScrollController.scrollTo(
               index: (widget.initialAyat! - 1) + headerCount,
               duration: const Duration(seconds: 1),
@@ -283,151 +384,138 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
       });
     }
 
-    return Container(
-      color: Colors.white, // Ganti jika background defaultmu beda
-      child: ScrollablePositionedList.builder(
-        itemScrollController: _itemScrollController,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+    return ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      itemCount: headerCount + ayatList.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 20),
+            child: _buildHeaderCard(),
+          );
+        }
 
-        // Total Item = Header + Bismillah + Jumlah Ayat + 1 Ruang Kosong Bawah
-        itemCount: headerCount + ayatList.length + 1,
-
-        itemBuilder: (context, index) {
-          // 1. PALING ATAS: Tampilkan Header Card
-          if (index == 0) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 20),
-              child: _buildHeaderCard(),
-            );
-          }
-
-          // 2. KEDUA: Tampilkan Bismillah (JIKA ADA)
-          if (hasBismillah && index == 1) {
-            return const Padding(
-              padding: EdgeInsets.only(bottom: 30),
-              child: Text(
-                "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
-                style: TextStyle(
-                  fontSize: 28,
-                  color: Color(0xFF003527),
-                  fontFamily: 'LPMQ',
-                ),
-                textAlign: TextAlign.center,
+        if (hasBismillah && index == 1) {
+          return const Padding(
+            padding: EdgeInsets.only(bottom: 30),
+            child: Text(
+              "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+              style: TextStyle(
+                fontSize: 28,
+                color: Color(0xFF003527),
+                fontFamily: 'LPMQ',
               ),
-            );
-          }
-
-          // 3. PALING BAWAH: Ruang kosong agar tidak tertutup tombol/bottom bar
-          if (index == headerCount + ayatList.length) {
-            return const SizedBox(height: 100);
-          }
-
-          // 4. TENGAH: Tampilkan Daftar Ayat
-          // Kita kurangi index dengan headerCount agar ayat 1 mulai dari array ke-0
-          final ayatIndex = index - headerCount;
-          final ayat = ayatList[ayatIndex];
-
-          return Container(
-            margin: const EdgeInsets.only(
-              bottom: 20,
-            ), // Sebagai pengganti separator
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.02),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF3F4F5),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Center(
-                            child: Text(
-                              ayat['nomorAyat'].toString(),
-                              style: const TextStyle(
-                                color: Color(0xFF003527),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          top: -4,
-                          left: -4,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF904D00),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.bookmark_add_outlined,
-                        color: Color(0xFF904D00),
-                      ),
-                      tooltip: 'Tandai Terakhir Dibaca',
-                      onPressed: () => _saveBookmark(ayat['nomorAyat']),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  ayat['teksArab'],
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    fontSize: 28,
-                    color: Color(0xFF191C1D),
-                    fontFamily: 'LPMQ',
-                    height: 2.0,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.only(left: 16, top: 4, bottom: 4),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                      left: BorderSide(color: Color(0xFF904D00), width: 3),
-                    ),
-                  ),
-                  child: Text(
-                    ayat['teksIndonesia'],
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade700,
-                      fontStyle: FontStyle.italic,
-                      height: 1.5,
-                    ),
-                  ),
-                ),
-              ],
+              textAlign: TextAlign.center,
             ),
           );
-        },
-      ),
+        }
+
+        if (index == headerCount + ayatList.length) {
+          return const SizedBox(height: 100);
+        }
+
+        final ayatIndex = index - headerCount;
+        final ayat = ayatList[ayatIndex];
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F4F5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Center(
+                          child: Text(
+                            ayat['nomorAyat'].toString(),
+                            style: const TextStyle(
+                              color: Color(0xFF003527),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: -4,
+                        left: -4,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF904D00),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.bookmark_add_outlined,
+                      color: Color(0xFF904D00),
+                    ),
+                    tooltip: 'Tandai Terakhir Dibaca',
+                    onPressed: () => _saveBookmark(ayat['nomorAyat']),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text(
+                ayat['teksArab'],
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 28,
+                  color: Color(0xFF191C1D),
+                  fontFamily: 'LPMQ',
+                  height: 2.0,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.only(left: 16, top: 4, bottom: 4),
+                decoration: const BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: Color(0xFF904D00), width: 3),
+                  ),
+                ),
+                child: Text(
+                  ayat['teksIndonesia'],
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade700,
+                    fontStyle: FontStyle.italic,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -515,7 +603,6 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     );
   }
 
-
   Widget _buildStickyNavigationBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
@@ -595,190 +682,117 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
   }
 
   // ==========================================
-  // TAMPILAN 2: MODE MUSHAF (Super Ringan & Petunjuk Statis)
+  // TAMPILAN 2: MODE MUSHAF (MENGGUNAKAN PAGEVIEW 604 HALAMAN BUKU FISIK)
   // ==========================================
   Widget _buildMushafView() {
-    final List<dynamic> ayatList = _surahData!['ayat'];
+    return Stack(
+      children: [
+        // 1. AREA BACA FULL SCREEN MENGGUNAKAN IMAGE MUSHAF ASLI
+        PageView.builder(
+          controller: _pageController,
+          // Ini sangat krusial! reverse: true membuat aplikasi bisa digeser dari
+          // kanan ke kiri sesuai standar membaca bahasa Arab.
+          reverse: true,
+          itemCount: 604, // Total halaman Al-Quran Mushaf Madinah
+          onPageChanged: (index) {
+            setState(() {
+              _currentPageIndex = index;
+            });
+          },
+          itemBuilder: (context, index) {
+            // Standar nama file adalah page001.png sampai page604.png
+            String pageStr = (index + 1).toString().padLeft(3, '0');
+            // Menarik gambar resolusi HD langsung dari server open-source Global (Sangat stabil)
+            String url =
+                'https://raw.githubusercontent.com/quran/quran.com-images/master/width_1024/page$pageStr.png';
 
-    // --- LOGIKA OTOMATIS SCROLL KE AYAT TERAKHIR ---
-    if (widget.initialAyat != null && !_hasScrolled) {
-      _hasScrolled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // Jeda setengah detik biar ayatnya selesai digambar, baru meluncur!
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (_itemScrollController.isAttached) {
-            _itemScrollController.scrollTo(
-              index: widget.initialAyat! + 1, // +1 untuk melewati Header surah
-              duration: const Duration(
-                seconds: 1,
-              ), // Lama waktu animasi meluncur
-              curve: Curves.easeInOutCubic, // Gaya animasi melambat di akhir
-            );
-          }
-        });
-      });
-    }
-
-    return Container(
-      color: const Color(0xFFFDFBF7), // Kertas Cream
-      child: Column(
-        // Kita bungkus pakai Column
-        children: [
-          // 1. AREA SCROLL AYAT (Bisa digulir)
-          Expanded(
-            child: ScrollablePositionedList.builder(
-              itemScrollController: _itemScrollController, // <--- TAMBAHKAN INI
-
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-              itemCount:
-                  ayatList.length + 3, // Header + Bismillah + Ayat + Footer
-              itemBuilder: (context, index) {
-                // ... isi di bawahnya biarkan sama persis ...
-                // --- BAGIAN HEADER (NAMA SURAH) ---
-                if (index == 0) {
-                  return Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 30,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF003527).withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(30),
-                          border: Border.all(
-                            color: const Color(0xFF003527).withOpacity(0.1),
-                          ),
-                        ),
-                        child: Text(
-                          "سورة ${_surahData!['nama']}",
-                          style: TextStyle(
-                            fontSize: 22,
-                            color: const Color(0xFF003527).withOpacity(0.8),
-                            fontFamily: 'LPMQ',
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-                    ],
-                  );
-                }
-
-                // --- BAGIAN BISMILLAH ---
-                if (index == 1) {
-                  if (widget.nomorSurah != 1 && widget.nomorSurah != 9) {
-                    return const Padding(
-                      padding: EdgeInsets.only(bottom: 30),
-                      child: Text(
-                        "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
-                        style: TextStyle(
-                          fontSize: 28,
-                          color: Color(0xFF003527),
-                          fontFamily: 'LPMQ',
-                        ),
-                        textAlign: TextAlign.center,
+            return Container(
+              color: Colors.white,
+              // InteractiveViewer = Memungkinkan user melakukan Pinch-to-Zoom pada halaman
+              child: InteractiveViewer(
+                minScale: 1.0,
+                maxScale: 3.5, // Maksimal Zoom In
+                child: Image.network(
+                  url,
+                  fit: BoxFit
+                      .contain, // Menyesuaikan gambar agar pas dari ujung ke ujung HP
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Center(
+                      child: CircularProgressIndicator(
+                        color: const Color(0xFF003527),
+                        value: loadingProgress.expectedTotalBytes != null
+                            ? loadingProgress.cumulativeBytesLoaded /
+                                  (loadingProgress.expectedTotalBytes ?? 1)
+                            : null,
                       ),
                     );
-                  }
-                  return const SizedBox.shrink();
-                }
-
-                // --- BAGIAN AYAT-AYAT MUSHAF ---
-                final ayat = ayatList[index - 2];
-                String arabicNumber = _toArabicNumber(
-                  ayat['nomorAyat'].toString(),
-                );
-
-                return GestureDetector(
-                  // Sensor Sentuhan untuk Tandai Ayat
-                  onLongPress: () => _saveBookmark(ayat['nomorAyat']),
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 12.0),
-                    child: Directionality(
-                      textDirection: TextDirection.rtl,
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Center(
                       child: Text(
-                        "${ayat['teksArab']} ﴿$arabicNumber﴾",
-                        textAlign: TextAlign.justify,
-                        style: const TextStyle(
-                          fontSize: 28,
-                          color: Color(0xFF003527),
-                          fontFamily: 'LPMQ',
-                          height: 2.2,
-                          wordSpacing: 2.0,
-                        ),
+                        'Gagal memuat gambar halaman.',
+                        style: TextStyle(color: Colors.red),
                       ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-
-          // 2. AREA FOOTER STATIS (Selalu terlihat di bawah)
-          Container(
-            padding: const EdgeInsets.only(top: 16, bottom: 24),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFDFBF7),
-              border: Border(
-                top: BorderSide(
-                  color: const Color(0xFF003527).withOpacity(0.08),
-                  width: 1,
+                    );
+                  },
                 ),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, -4),
+            );
+          },
+        ),
+
+        // 2. BOTTOM BAR NAVIGASI & INFORMASI HALAMAN (TETAP DI BAWAH)
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Container(
+            height: 55,
+            decoration: const BoxDecoration(
+              color: Color(0xFF538C61), // Hijau khas mushaf
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                IconButton(
+                  icon: const Icon(
+                    Icons.arrow_back_ios_new,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  tooltip: 'Kembali',
+                ),
+
+                // Indikator Halaman (Otomatis update ketika digeser)
+                Text(
+                  "Halaman ${_currentPageIndex + 1}",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    letterSpacing: 1,
+                  ),
+                ),
+
+                IconButton(
+                  icon: const Icon(
+                    Icons.view_list_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                  onPressed: () {
+                    // Tombol untuk balik ke Mode Terjemahan
+                    setState(() {
+                      _isMushafMode = false;
+                    });
+                  },
+                  tooltip: 'Kembali ke Terjemahan',
                 ),
               ],
             ),
-            child: SafeArea(
-              child: Column(
-                mainAxisSize:
-                    MainAxisSize.min, // Agar tingginya menyesuaikan isi
-                children: [
-                  Text(
-                    'Surah ${_surahData!['namaLatin']} • Surah ke - ${_toArabicNumber(widget.nomorSurah.toString())}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: const Color(0xFF003527).withOpacity(0.5),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.swipe_left,
-                        size: 16,
-                        color: Colors.grey.shade400,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Usap layar, atau Tahan ayat untuk Tandai',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade500,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Icon(
-                        Icons.swipe_right,
-                        size: 16,
-                        color: Colors.grey.shade400,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
