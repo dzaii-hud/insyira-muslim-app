@@ -75,6 +75,7 @@ flutter:
     - assets/audios/
     - assets/data/
     - assets/fonts/
+    - assets/fonts/QCF/
     - assets/dzikir.json
 
    # 2. Daftarkan font-nya

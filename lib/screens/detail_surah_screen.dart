@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -33,6 +34,16 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
   // --- CONTROLLER HALAMAN MUSHAF (MODE BUKU FISIK) ---
   late PageController _pageController;
   int _currentPageIndex = 0;
+
+  // --- [BARU] SERVICE & CACHE UNTUK MODE MUSHAF FONT QCF ---
+  // TODO: Ganti dengan client_id & client_secret hasil daftar di
+  // https://api-docs.quran.foundation (Request Access -> Content API).
+  final QuranFoundationApi _quranApi = QuranFoundationApi(
+    clientId: '3d39f639-f1eb-40ea-bc4c-0ffe73bbbcd1',
+    clientSecret:
+        'qfcs_1d4f0504be744cfea3366da24ab3e41c142a253be221454585541ea937d15965',
+  );
+  final Map<int, MushafPageData> _pageDataCache = {};
 
   // Database Pemetaan Halaman Awal untuk 114 Surah (Standar Mushaf Madinah)
   final List<int> _surahStartPage = [
@@ -304,7 +315,7 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
       // --- BODY UTAMA ---
       body: SafeArea(
         child: _isMushafMode
-            ? _buildMushafView() // Panggil Tampilan Mushaf Halaman (Images)
+            ? _buildMushafView() // Panggil Tampilan Mushaf Halaman (Font QCF)
             : GestureDetector(
                 // SWIPE SURAH HANYA AKTIF DI MODE TERJEMAHAN
                 onHorizontalDragEnd: (details) {
@@ -682,67 +693,125 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
   }
 
   // ==========================================
-  // TAMPILAN 2: MODE MUSHAF (MENGGUNAKAN PAGEVIEW 604 HALAMAN BUKU FISIK)
+  // TAMPILAN 2: MODE MUSHAF — [DIUPGRADE] SEKARANG PAKAI FONT QCF
+  // Bukan lagi gambar network (yang sumbernya 404 / tidak valid).
+  // Layout per-baris di-generate dari data resmi Quran Foundation API,
+  // dirender pakai font khusus per halaman supaya hasilnya identik
+  // dengan mushaf cetak (Madani Mushaf, 604 halaman).
   // ==========================================
+
+  // Cache di memori supaya pindah halaman bolak-balik tidak fetch ulang.
+  Future<MushafPageData> _loadMushafPage(int pageNumber) async {
+    if (_pageDataCache.containsKey(pageNumber)) {
+      return _pageDataCache[pageNumber]!;
+    }
+    // Font & data diambil paralel biar lebih cepat.
+    final results = await Future.wait([
+      QcfFontLoader.ensureLoaded(pageNumber),
+      _quranApi.fetchPageWords(pageNumber),
+    ]);
+    final words = results[1] as List<MushafWord>;
+    final pageData = MushafPageData.fromWords(pageNumber, words);
+    _pageDataCache[pageNumber] = pageData;
+    return pageData;
+  }
+
   Widget _buildMushafView() {
     return Stack(
       children: [
-        // 1. AREA BACA FULL SCREEN MENGGUNAKAN IMAGE MUSHAF ASLI
-        PageView.builder(
-          controller: _pageController,
-          // Ini sangat krusial! reverse: true membuat aplikasi bisa digeser dari
-          // kanan ke kiri sesuai standar membaca bahasa Arab.
-          reverse: true,
-          itemCount: 604, // Total halaman Al-Quran Mushaf Madinah
-          onPageChanged: (index) {
-            setState(() {
-              _currentPageIndex = index;
-            });
-          },
-          itemBuilder: (context, index) {
-            // Standar nama file adalah page001.png sampai page604.png
-            String pageStr = (index + 1).toString().padLeft(3, '0');
-            // Menarik gambar resolusi HD langsung dari server open-source Global (Sangat stabil)
-            String url =
-                'https://raw.githubusercontent.com/quran/quran.com-images/master/width_1024/page$pageStr.png';
+        // 1. AREA BACA FULL SCREEN — SATU HALAMAN MUSHAF PER LAYAR, TEKS FONT QCF
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: PageView.builder(
+            controller: _pageController,
+            // Krusial: reverse: true supaya geser mengikuti arah baca Arab,
+            // dikombinasikan dengan Directionality.rtl di atas.
+            reverse: true,
+            itemCount: 604, // Total halaman Mushaf Madinah
+            onPageChanged: (index) {
+              setState(() {
+                _currentPageIndex = index;
+              });
+            },
+            itemBuilder: (context, index) {
+              final pageNumber = index + 1;
 
-            return Container(
-              color: Colors.white,
-              // InteractiveViewer = Memungkinkan user melakukan Pinch-to-Zoom pada halaman
-              child: InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 3.5, // Maksimal Zoom In
-                child: Image.network(
-                  url,
-                  fit: BoxFit
-                      .contain, // Menyesuaikan gambar agar pas dari ujung ke ujung HP
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Center(
-                      child: CircularProgressIndicator(
-                        color: const Color(0xFF003527),
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                                  (loadingProgress.expectedTotalBytes ?? 1)
-                            : null,
-                      ),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Center(
-                      child: Text(
-                        'Gagal memuat gambar halaman.',
-                        style: TextStyle(color: Colors.red),
-                      ),
+              return Container(
+                color: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 24,
+                ),
+                child: FutureBuilder<MushafPageData>(
+                  future: _loadMushafPage(pageNumber),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF003527),
+                        ),
+                      );
+                    }
+
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.wifi_off_rounded,
+                                color: Color(0xFF904D00),
+                                size: 32,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Gagal memuat halaman $pageNumber.\n${snapshot.error}',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey.shade700),
+                              ),
+                              const SizedBox(height: 12),
+                              TextButton(
+                                onPressed: () => setState(() {
+                                  _pageDataCache.remove(pageNumber);
+                                }),
+                                child: const Text('Coba Lagi'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
+                    final page = snapshot.data!;
+                    final fontFamily =
+                        'QCF_P${pageNumber.toString().padLeft(3, '0')}';
+
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: page.lines.map((line) {
+                        return Text(
+                          line.renderedText,
+                          textAlign: TextAlign.justify,
+                          textDirection: TextDirection.rtl,
+                          style: TextStyle(
+                            fontFamily: fontFamily,
+                            fontSize: 24,
+                            color: const Color(0xFF191C1D),
+                            height: 1.7,
+                          ),
+                        );
+                      }).toList(),
                     );
                   },
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
 
-        // 2. BOTTOM BAR NAVIGASI & INFORMASI HALAMAN (TETAP DI BAWAH)
+        // 2. BOTTOM BAR NAVIGASI & INFORMASI HALAMAN (TETAP DI BAWAH, DESAIN SAMA)
         Align(
           alignment: Alignment.bottomCenter,
           child: Container(
@@ -794,5 +863,234 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
         ),
       ],
     );
+  }
+}
+
+// ==================================================================
+// [BARU] KELAS PENDUKUNG MODE MUSHAF FONT QCF
+// Sengaja ditaruh di file yang sama (bukan file terpisah) sesuai
+// permintaan — supaya tetap satu file yang bisa langsung dipakai.
+// ==================================================================
+
+/// Satu kata dalam halaman mushaf, sesuai struktur data dari
+/// Quran Foundation Content API (word_fields=code_v2,line_number,page_number).
+class MushafWord {
+  final int pageNumber;
+  final int lineNumber;
+  final String verseKey;
+  final int position;
+  final String codeV2; // glyph khusus untuk font QCF v2 di halaman ini
+
+  MushafWord({
+    required this.pageNumber,
+    required this.lineNumber,
+    required this.verseKey,
+    required this.position,
+    required this.codeV2,
+  });
+
+  factory MushafWord.fromJson(Map<String, dynamic> json) {
+    return MushafWord(
+      pageNumber: json['page_number'] as int,
+      lineNumber: json['line_number'] as int,
+      verseKey: json['verse_key'] as String? ?? '',
+      position: json['position'] as int? ?? 0,
+      codeV2: json['code_v2'] as String? ?? '',
+    );
+  }
+}
+
+/// Satu baris = kumpulan MushafWord dengan line_number sama, sudah terurut.
+class MushafLine {
+  final int lineNumber;
+  final List<MushafWord> words;
+
+  MushafLine({required this.lineNumber, required this.words});
+
+  /// Gabungkan semua glyph kata jadi satu string supaya bisa dirender
+  /// dengan SATU Text widget + TextAlign.justify (mirip mushaf cetak).
+  String get renderedText => words.map((w) => w.codeV2).join();
+}
+
+/// Satu halaman penuh mushaf, dikelompokkan per baris dari daftar kata.
+class MushafPageData {
+  final int pageNumber;
+  final List<MushafLine> lines;
+
+  MushafPageData({required this.pageNumber, required this.lines});
+
+  factory MushafPageData.fromWords(int pageNumber, List<MushafWord> words) {
+    final Map<int, List<MushafWord>> grouped = {};
+    for (final w in words) {
+      grouped.putIfAbsent(w.lineNumber, () => []).add(w);
+    }
+    final lines = grouped.entries.map((e) {
+      e.value.sort((a, b) {
+        final verseCompare = a.verseKey.compareTo(b.verseKey);
+        if (verseCompare != 0) return verseCompare;
+        return a.position.compareTo(b.position);
+      });
+      return MushafLine(lineNumber: e.key, words: e.value);
+    }).toList()..sort((a, b) => a.lineNumber.compareTo(b.lineNumber));
+
+    return MushafPageData(pageNumber: pageNumber, lines: lines);
+  }
+}
+
+/// Komunikasi ke Quran Foundation Content API (penerus resmi api.quran.com).
+/// Dokumentasi: https://api-docs.quran.foundation
+///
+/// ‼️ CATATAN KEAMANAN: client_secret di sini HANYA untuk prototipe/dev.
+/// Untuk rilis produksi, pindahkan proses tukar token ke backend milikmu
+/// sendiri supaya client_secret tidak ikut ter-bundle di dalam APK/IPA
+/// (APK bisa di-decompile dan secret bisa dibaca orang lain).
+class QuranFoundationApi {
+  QuranFoundationApi({required this.clientId, required this.clientSecret});
+
+  final String clientId;
+  final String clientSecret;
+
+  // ‼️ PENTING: URL di bawah ini pakai environment PRELIVE (sandbox/testing),
+  // karena Client ID & Secret yang kamu daftarkan sekarang ada di tab "Prelive"
+  // dashboard Quran Foundation. Kalau nanti sudah siap rilis produksi:
+  // 1. Buka tab "Production" di dashboard, generate Client ID & Secret baru
+  //    (BEDA dari yang Prelive, tidak bisa dipakai silang).
+  // 2. Ganti kedua URL di bawah ini ke domain production:
+  //    _tokenUrl -> https://oauth2.quran.foundation/oauth2/token
+  //    _apiBase  -> https://apis.quran.foundation/content/api/v4
+  static const _tokenUrl =
+      'https://prelive-oauth2.quran.foundation/oauth2/token';
+  static const _apiBase =
+      'https://apis-prelive.quran.foundation/content/api/v4';
+  static const int _mushafIdQcfV2 = 1; // layout mushaf Madinah standar
+
+  String? _cachedToken;
+  DateTime? _tokenExpiry;
+
+  Future<String> _getAccessToken() async {
+    if (_cachedToken != null &&
+        _tokenExpiry != null &&
+        DateTime.now().isBefore(
+          _tokenExpiry!.subtract(const Duration(seconds: 30)),
+        )) {
+      return _cachedToken!;
+    }
+
+    final basicAuth = base64Encode(utf8.encode('$clientId:$clientSecret'));
+    final response = await http.post(
+      Uri.parse(_tokenUrl),
+      headers: {
+        'Authorization': 'Basic $basicAuth',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: {'grant_type': 'client_credentials', 'scope': 'content'},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Gagal ambil access token (${response.statusCode}): ${response.body}',
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    _cachedToken = data['access_token'] as String;
+    final expiresIn = data['expires_in'] as int? ?? 3600;
+    _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
+    return _cachedToken!;
+  }
+
+  /// Ambil semua kata di satu halaman mushaf (1-604) lengkap dengan
+  /// line_number (posisi baris) dan code_v2 (glyph font QCF).
+  Future<List<MushafWord>> fetchPageWords(int pageNumber) async {
+    final token = await _getAccessToken();
+
+    final uri = Uri.parse('$_apiBase/verses/by_page/$pageNumber').replace(
+      queryParameters: {
+        'words': 'true',
+        'word_fields': 'code_v2,line_number,page_number',
+        'mushaf': '$_mushafIdQcfV2',
+        'per_page': '50',
+      },
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {'x-auth-token': token, 'x-client-id': clientId},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Gagal ambil halaman $pageNumber (${response.statusCode}): ${response.body}',
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final verses = data['verses'] as List<dynamic>? ?? [];
+
+    // 🔎 DEBUG SEMENTARA — hapus lagi setelah masalah ketemu.
+    debugPrint(
+      '[QCF-DEBUG] Halaman $pageNumber: jumlah ayat = ${verses.length}',
+    );
+    if (verses.isNotEmpty) {
+      debugPrint(
+        '[QCF-DEBUG] Contoh ayat pertama (raw): ${jsonEncode(verses.first)}',
+      );
+    } else {
+      debugPrint(
+        '[QCF-DEBUG] Response penuh (verses kosong): ${response.body}',
+      );
+    }
+
+    final words = <MushafWord>[];
+    for (final verse in verses) {
+      final verseKey = verse['verse_key'] as String? ?? '';
+      final wordList = verse['words'] as List<dynamic>? ?? [];
+      for (final w in wordList) {
+        final map = Map<String, dynamic>.from(w as Map);
+        map['verse_key'] = map['verse_key'] ?? verseKey;
+        words.add(MushafWord.fromJson(map));
+      }
+    }
+
+    // 🔎 DEBUG SEMENTARA
+    debugPrint('[QCF-DEBUG] Total kata ter-parse: ${words.length}');
+    if (words.isNotEmpty) {
+      debugPrint(
+        '[QCF-DEBUG] Contoh code_v2 kata pertama: "${words.first.codeV2}"',
+      );
+    }
+
+    return words;
+  }
+}
+
+/// Loader font QCF per halaman, memakai dart:ui FontLoader supaya TIDAK
+/// perlu mendaftarkan 604 font satu-satu di pubspec.yaml.
+///
+/// Syarat: file font sudah didownload & ditaruh di
+/// assets/fonts/QCF/QCF2XXX.ttf (XXX = nomor halaman, 3 digit, contoh
+/// QCF2001.ttf untuk halaman 1). Lihat instruksi download di penjelasan.
+class QcfFontLoader {
+  static final Set<int> _loadedPages = {};
+
+  static Future<void> ensureLoaded(int pageNumber) async {
+    if (_loadedPages.contains(pageNumber)) return;
+
+    final padded = pageNumber.toString().padLeft(3, '0');
+    final familyName = 'QCF_P$padded';
+    final assetPath = 'assets/fonts/QCF/QCF2$padded.ttf';
+
+    try {
+      final fontData = await rootBundle.load(assetPath);
+      final loader = FontLoader(familyName);
+      loader.addFont(Future.value(fontData));
+      await loader.load();
+      _loadedPages.add(pageNumber);
+    } catch (e) {
+      throw Exception(
+        'Font untuk halaman $pageNumber belum ada di $assetPath. '
+        'Pastikan sudah didownload sesuai instruksi. ($e)',
+      );
+    }
   }
 }
