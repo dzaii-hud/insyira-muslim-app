@@ -36,14 +36,13 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
   int _currentPageIndex = 0;
 
   // --- [BARU] SERVICE & CACHE UNTUK MODE MUSHAF FONT QCF ---
-  // TODO: Ganti dengan client_id & client_secret hasil daftar di
-  // https://api-docs.quran.foundation (Request Access -> Content API).
   final QuranFoundationApi _quranApi = QuranFoundationApi(
-    clientId: '3d39f639-f1eb-40ea-bc4c-0ffe73bbbcd1',
+    clientId: '97c651f5-6f20-44e6-941c-ae5c9f2296f1',
     clientSecret:
-        'qfcs_1d4f0504be744cfea3366da24ab3e41c142a253be221454585541ea937d15965',
+        'qfcs_a397381eee834fd7a4c23007e8b7a4a7f53c29790b3c42569d970af3c4e6cd6d',
   );
   final Map<int, MushafPageData> _pageDataCache = {};
+  double _mushafFontSize = 30; // bisa diubah user lewat panel pengaturan
 
   // Database Pemetaan Halaman Awal untuk 114 Surah (Standar Mushaf Madinah)
   final List<int> _surahStartPage = [
@@ -716,18 +715,222 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     return pageData;
   }
 
+  // --- [BARU] Simpan halaman mushaf yang ditandai user ---
+  Future<void> _saveMushafBookmark(int pageNumber) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('last_mushaf_page', pageNumber);
+      await prefs.setInt('last_surah_number', widget.nomorSurah);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🔖 Halaman $pageNumber ditandai'),
+          backgroundColor: const Color(0xFF003527),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Gagal menandai halaman, coba lagi.'),
+          backgroundColor: Colors.red.shade800,
+        ),
+      );
+    }
+  }
+
+  // --- [BARU] Panel buat atur ukuran teks (lingkaran kecil di layar) ---
+  void _showMushafFontSizeSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  const Text(
+                    'Ukuran Teks',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Color(0xFF003527),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text('A', style: TextStyle(fontSize: 14)),
+                      Expanded(
+                        child: Slider(
+                          value: _mushafFontSize,
+                          min: 20,
+                          max: 44,
+                          activeColor: const Color(0xFF003527),
+                          onChanged: (value) {
+                            setSheetState(() {});
+                            setState(() => _mushafFontSize = value);
+                          },
+                        ),
+                      ),
+                      const Text('A', style: TextStyle(fontSize: 28)),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // --- [BARU] Hitung ukuran font PALING PAS buat 1 halaman, biar semua
+  // baris mushaf pasti muat dalam 1 baris (tidak ke-wrap otomatis oleh
+  // Flutter, yang bikin ayat keliatan "kepotong" jadi 2 baris visual).
+  // Caranya: ukur lebar baris TERPANJANG di halaman itu pada ukuran font
+  // yang diinginkan user, lalu skalakan turun kalau kepanjangan.
+  double _computeFitFontSize({
+    required List<String> lineTexts,
+    required String fontFamily,
+    required double maxWidth,
+    required double desiredFontSize,
+  }) {
+    if (lineTexts.isEmpty || maxWidth <= 0) return desiredFontSize;
+
+    double widest = 0;
+    for (final text in lineTexts) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: text,
+          style: TextStyle(fontFamily: fontFamily, fontSize: desiredFontSize),
+        ),
+        textDirection: TextDirection.rtl,
+        maxLines: 1,
+      )..layout();
+      if (painter.width > widest) widest = painter.width;
+    }
+
+    if (widest <= maxWidth || widest == 0) return desiredFontSize;
+
+    final scale = (maxWidth / widest) * 0.98; // sedikit margin aman
+    return (desiredFontSize * scale).clamp(12.0, desiredFontSize);
+  }
+
+  // --- [BARU] Render satu item halaman: bisa berupa header nama surah,
+  // basmalah dekoratif, atau baris ayat sungguhan (font QCF).
+  Widget _buildMushafItem(
+    MushafPageItem item,
+    String fontFamily,
+    double fittedFontSize,
+  ) {
+    if (item is SurahHeaderItem) {
+      final name = (item.chapterNumber >= 1 && item.chapterNumber <= 114)
+          ? kSurahArabicNames[item.chapterNumber - 1]
+          : '';
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF003527).withOpacity(0.05),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFF003527).withOpacity(0.15)),
+        ),
+        child: Text(
+          'سورة $name',
+          style: const TextStyle(
+            fontFamily: 'LPMQ',
+            fontSize: 20,
+            color: Color(0xFF003527),
+          ),
+        ),
+      );
+    }
+
+    if (item is BasmalahItem) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Text(
+          'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: 'LPMQ',
+            fontSize: 24,
+            color: Color(0xFF003527),
+          ),
+        ),
+      );
+    }
+
+    final line = (item as MushafLineItem).line;
+    return SizedBox(
+      width: double.infinity,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          line.renderedText,
+          textAlign: TextAlign.justify,
+          textDirection: TextDirection.rtl,
+          style: TextStyle(
+            fontFamily: fontFamily,
+            fontSize: fittedFontSize,
+            color: const Color(0xFF191C1D),
+            height: 1.7,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPageNumberPill(int pageNumber) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF003527).withOpacity(0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFF003527).withOpacity(0.1)),
+        ),
+        child: Text(
+          'Halaman $pageNumber',
+          style: const TextStyle(
+            color: Color(0xFF003527),
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMushafView() {
     return Stack(
       children: [
-        // 1. AREA BACA FULL SCREEN — SATU HALAMAN MUSHAF PER LAYAR, TEKS FONT QCF
+        // 1. AREA BACA — SATU HALAMAN MUSHAF PER LAYAR, TEKS FONT QCF,
+        //    dibungkus tampilan kartu ala mushaf (border tipis + shadow lembut)
         Directionality(
           textDirection: TextDirection.rtl,
           child: PageView.builder(
             controller: _pageController,
-            // Krusial: reverse: true supaya geser mengikuti arah baca Arab,
-            // dikombinasikan dengan Directionality.rtl di atas.
             reverse: true,
-            itemCount: 604, // Total halaman Mushaf Madinah
+            itemCount: 604,
             onPageChanged: (index) {
               setState(() {
                 _currentPageIndex = index;
@@ -737,10 +940,24 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
               final pageNumber = index + 1;
 
               return Container(
-                color: Colors.white,
+                margin: const EdgeInsets.fromLTRB(16, 72, 16, 84),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
-                  vertical: 24,
+                  vertical: 20,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFDFBF7),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFF003527).withOpacity(0.08),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF003527).withOpacity(0.06),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
                 child: FutureBuilder<MushafPageData>(
                   future: _loadMushafPage(pageNumber),
@@ -787,22 +1004,42 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                     final page = snapshot.data!;
                     final fontFamily =
                         'QCF_P${pageNumber.toString().padLeft(3, '0')}';
+                    final lineTextsOnly = page.items
+                        .whereType<MushafLineItem>()
+                        .map((e) => e.line.renderedText)
+                        .toList();
 
-                    return Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: page.lines.map((line) {
-                        return Text(
-                          line.renderedText,
-                          textAlign: TextAlign.justify,
-                          textDirection: TextDirection.rtl,
-                          style: TextStyle(
-                            fontFamily: fontFamily,
-                            fontSize: 24,
-                            color: const Color(0xFF191C1D),
-                            height: 1.7,
-                          ),
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final fittedFontSize = _computeFitFontSize(
+                          lineTexts: lineTextsOnly,
+                          fontFamily: fontFamily,
+                          maxWidth: constraints.maxWidth,
+                          desiredFontSize: _mushafFontSize,
                         );
-                      }).toList(),
+
+                        return Column(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
+                                children: page.items
+                                    .map(
+                                      (item) => _buildMushafItem(
+                                        item,
+                                        fontFamily,
+                                        fittedFontSize,
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildPageNumberPill(pageNumber),
+                          ],
+                        );
+                      },
                     );
                   },
                 ),
@@ -811,53 +1048,129 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
           ),
         ),
 
-        // 2. BOTTOM BAR NAVIGASI & INFORMASI HALAMAN (TETAP DI BAWAH, DESAIN SAMA)
+        // 2. TOP BAR — menu balik ke mode terjemahan + tombol tandai halaman
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
+            bottom: false,
+            child: Container(
+              height: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.96),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.arrow_back_ios_new,
+                      color: Color(0xFF003527),
+                      size: 18,
+                    ),
+                    tooltip: 'Kembali ke Mode Terjemahan',
+                    onPressed: () {
+                      setState(() {
+                        _isMushafMode = false;
+                      });
+                    },
+                  ),
+                  Expanded(
+                    child: Text(
+                      _surahData != null ? _surahData!['namaLatin'] : '',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF003527),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.bookmark_add_outlined,
+                      color: Color(0xFF904D00),
+                    ),
+                    tooltip: 'Tandai Halaman Ini',
+                    onPressed: () => _saveMushafBookmark(_currentPageIndex + 1),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // 3. FAB BULAT KECIL — atur ukuran teks (ramah untuk lansia)
+        Positioned(
+          right: 16,
+          bottom: 92,
+          child: FloatingActionButton(
+            heroTag: 'mushaf_font_size_fab',
+            mini: true,
+            backgroundColor: const Color(0xFF003527),
+            onPressed: _showMushafFontSizeSheet,
+            child: const Icon(Icons.text_fields, color: Colors.white, size: 20),
+          ),
+        ),
+
+        // 4. BOTTOM BAR — navigasi halaman sebelumnya/selanjutnya
         Align(
           alignment: Alignment.bottomCenter,
           child: Container(
-            height: 55,
-            decoration: const BoxDecoration(
-              color: Color(0xFF538C61), // Hijau khas mushaf
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back_ios_new,
-                    color: Colors.white,
-                    size: 20,
+            height: 64,
+            decoration: const BoxDecoration(color: Color(0xFF538C61)),
+            child: SafeArea(
+              top: false,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chevron_left,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                    tooltip: 'Halaman Sebelumnya',
+                    onPressed: _currentPageIndex > 0
+                        ? () => _pageController.previousPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOut,
+                          )
+                        : null,
                   ),
-                  onPressed: () => Navigator.pop(context),
-                  tooltip: 'Kembali',
-                ),
-
-                // Indikator Halaman (Otomatis update ketika digeser)
-                Text(
-                  "Halaman ${_currentPageIndex + 1}",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    letterSpacing: 1,
+                  Text(
+                    "Halaman ${_currentPageIndex + 1}",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      letterSpacing: 1,
+                    ),
                   ),
-                ),
-
-                IconButton(
-                  icon: const Icon(
-                    Icons.view_list_rounded,
-                    color: Colors.white,
-                    size: 24,
+                  IconButton(
+                    icon: const Icon(
+                      Icons.chevron_right,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                    tooltip: 'Halaman Selanjutnya',
+                    onPressed: _currentPageIndex < 603
+                        ? () => _pageController.nextPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOut,
+                          )
+                        : null,
                   ),
-                  onPressed: () {
-                    // Tombol untuk balik ke Mode Terjemahan
-                    setState(() {
-                      _isMushafMode = false;
-                    });
-                  },
-                  tooltip: 'Kembali ke Terjemahan',
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -898,6 +1211,18 @@ class MushafWord {
       codeV2: json['code_v2'] as String? ?? '',
     );
   }
+
+  /// Nomor surah dari verse_key (format "surah:ayat"), contoh "67:1" -> 67.
+  int get chapterNumber {
+    final parts = verseKey.split(':');
+    return parts.isNotEmpty ? int.tryParse(parts[0]) ?? 0 : 0;
+  }
+
+  /// Nomor ayat dari verse_key, contoh "67:1" -> 1.
+  int get ayahNumber {
+    final parts = verseKey.split(':');
+    return parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+  }
 }
 
 /// Satu baris = kumpulan MushafWord dengan line_number sama, sudah terurut.
@@ -912,12 +1237,31 @@ class MushafLine {
   String get renderedText => words.map((w) => w.codeV2).join();
 }
 
-/// Satu halaman penuh mushaf, dikelompokkan per baris dari daftar kata.
+/// Item yang dirender di halaman mushaf — bisa baris ayat sungguhan,
+/// header nama surah, atau basmalah dekoratif (muncul otomatis kalau
+/// halaman ini memuat awal sebuah surah baru).
+abstract class MushafPageItem {}
+
+class MushafLineItem extends MushafPageItem {
+  final MushafLine line;
+  MushafLineItem(this.line);
+}
+
+class SurahHeaderItem extends MushafPageItem {
+  final int chapterNumber;
+  SurahHeaderItem(this.chapterNumber);
+}
+
+class BasmalahItem extends MushafPageItem {}
+
+/// Satu halaman penuh mushaf, dikelompokkan per baris dari daftar kata,
+/// plus disisipi header nama surah + basmalah otomatis kalau ada surah
+/// baru yang mulai di halaman ini.
 class MushafPageData {
   final int pageNumber;
-  final List<MushafLine> lines;
+  final List<MushafPageItem> items;
 
-  MushafPageData({required this.pageNumber, required this.lines});
+  MushafPageData({required this.pageNumber, required this.items});
 
   factory MushafPageData.fromWords(int pageNumber, List<MushafWord> words) {
     final Map<int, List<MushafWord>> grouped = {};
@@ -926,16 +1270,168 @@ class MushafPageData {
     }
     final lines = grouped.entries.map((e) {
       e.value.sort((a, b) {
-        final verseCompare = a.verseKey.compareTo(b.verseKey);
-        if (verseCompare != 0) return verseCompare;
+        if (a.chapterNumber != b.chapterNumber) {
+          return a.chapterNumber.compareTo(b.chapterNumber);
+        }
+        if (a.ayahNumber != b.ayahNumber) {
+          return a.ayahNumber.compareTo(b.ayahNumber);
+        }
         return a.position.compareTo(b.position);
       });
       return MushafLine(lineNumber: e.key, words: e.value);
     }).toList()..sort((a, b) => a.lineNumber.compareTo(b.lineNumber));
 
-    return MushafPageData(pageNumber: pageNumber, lines: lines);
+    // Sisipkan header nama surah + basmalah SEBELUM baris yang memuat
+    // kata pertama (position == 1) dari ayat pertama (ayahNumber == 1)
+    // sebuah surah. Al-Fatihah (basmalah-nya sudah jadi ayat 1) dan
+    // At-Taubah (memang tidak pakai basmalah) dikecualikan dari basmalah,
+    // tapi tetap dapat header nama surah.
+    final items = <MushafPageItem>[];
+    for (final line in lines) {
+      final surahStartWord = line.words.firstWhere(
+        (w) => w.ayahNumber == 1 && w.position == 1,
+        orElse: () => MushafWord(
+          pageNumber: pageNumber,
+          lineNumber: -1,
+          verseKey: '',
+          position: -1,
+          codeV2: '',
+        ),
+      );
+
+      if (surahStartWord.lineNumber != -1) {
+        final chapter = surahStartWord.chapterNumber;
+        items.add(SurahHeaderItem(chapter));
+        if (chapter != 1 && chapter != 9) {
+          items.add(BasmalahItem());
+        }
+      }
+
+      items.add(MushafLineItem(line));
+    }
+
+    return MushafPageData(pageNumber: pageNumber, items: items);
   }
 }
+
+/// Daftar nama 114 surah dalam huruf Arab, dipakai untuk header dekoratif
+/// yang muncul otomatis di awal setiap surah pada mode mushaf.
+const List<String> kSurahArabicNames = [
+  'الفاتحة',
+  'البقرة',
+  'آل عمران',
+  'النساء',
+  'المائدة',
+  'الأنعام',
+  'الأعراف',
+  'الأنفال',
+  'التوبة',
+  'يونس',
+  'هود',
+  'يوسف',
+  'الرعد',
+  'إبراهيم',
+  'الحجر',
+  'النحل',
+  'الإسراء',
+  'الكهف',
+  'مريم',
+  'طه',
+  'الأنبياء',
+  'الحج',
+  'المؤمنون',
+  'النور',
+  'الفرقان',
+  'الشعراء',
+  'النمل',
+  'القصص',
+  'العنكبوت',
+  'الروم',
+  'لقمان',
+  'السجدة',
+  'الأحزاب',
+  'سبأ',
+  'فاطر',
+  'يس',
+  'الصافات',
+  'ص',
+  'الزمر',
+  'غافر',
+  'فصلت',
+  'الشورى',
+  'الزخرف',
+  'الدخان',
+  'الجاثية',
+  'الأحقاف',
+  'محمد',
+  'الفتح',
+  'الحجرات',
+  'ق',
+  'الذاريات',
+  'الطور',
+  'النجم',
+  'القمر',
+  'الرحمن',
+  'الواقعة',
+  'الحديد',
+  'المجادلة',
+  'الحشر',
+  'الممتحنة',
+  'الصف',
+  'الجمعة',
+  'المنافقون',
+  'التغابن',
+  'الطلاق',
+  'التحريم',
+  'الملك',
+  'القلم',
+  'الحاقة',
+  'المعارج',
+  'نوح',
+  'الجن',
+  'المزمل',
+  'المدثر',
+  'القيامة',
+  'الإنسان',
+  'المرسلات',
+  'النبأ',
+  'النازعات',
+  'عبس',
+  'التكوير',
+  'الانفطار',
+  'المطففين',
+  'الانشقاق',
+  'البروج',
+  'الطارق',
+  'الأعلى',
+  'الغاشية',
+  'الفجر',
+  'البلد',
+  'الشمس',
+  'الليل',
+  'الضحى',
+  'الشرح',
+  'التين',
+  'العلق',
+  'القدر',
+  'البينة',
+  'الزلزلة',
+  'العاديات',
+  'القارعة',
+  'التكاثر',
+  'العصر',
+  'الهمزة',
+  'الفيل',
+  'قريش',
+  'الماعون',
+  'الكوثر',
+  'الكافرون',
+  'النصر',
+  'المسد',
+  'الإخلاص',
+  'الفلق',
+  'الناس',
+];
 
 /// Komunikasi ke Quran Foundation Content API (penerus resmi api.quran.com).
 /// Dokumentasi: https://api-docs.quran.foundation
@@ -950,18 +1446,8 @@ class QuranFoundationApi {
   final String clientId;
   final String clientSecret;
 
-  // ‼️ PENTING: URL di bawah ini pakai environment PRELIVE (sandbox/testing),
-  // karena Client ID & Secret yang kamu daftarkan sekarang ada di tab "Prelive"
-  // dashboard Quran Foundation. Kalau nanti sudah siap rilis produksi:
-  // 1. Buka tab "Production" di dashboard, generate Client ID & Secret baru
-  //    (BEDA dari yang Prelive, tidak bisa dipakai silang).
-  // 2. Ganti kedua URL di bawah ini ke domain production:
-  //    _tokenUrl -> https://oauth2.quran.foundation/oauth2/token
-  //    _apiBase  -> https://apis.quran.foundation/content/api/v4
-  static const _tokenUrl =
-      'https://prelive-oauth2.quran.foundation/oauth2/token';
-  static const _apiBase =
-      'https://apis-prelive.quran.foundation/content/api/v4';
+  static const _tokenUrl = 'https://oauth2.quran.foundation/oauth2/token';
+  static const _apiBase = 'https://apis.quran.foundation/content/api/v4';
   static const int _mushafIdQcfV2 = 1; // layout mushaf Madinah standar
 
   String? _cachedToken;
@@ -1027,20 +1513,6 @@ class QuranFoundationApi {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final verses = data['verses'] as List<dynamic>? ?? [];
 
-    // 🔎 DEBUG SEMENTARA — hapus lagi setelah masalah ketemu.
-    debugPrint(
-      '[QCF-DEBUG] Halaman $pageNumber: jumlah ayat = ${verses.length}',
-    );
-    if (verses.isNotEmpty) {
-      debugPrint(
-        '[QCF-DEBUG] Contoh ayat pertama (raw): ${jsonEncode(verses.first)}',
-      );
-    } else {
-      debugPrint(
-        '[QCF-DEBUG] Response penuh (verses kosong): ${response.body}',
-      );
-    }
-
     final words = <MushafWord>[];
     for (final verse in verses) {
       final verseKey = verse['verse_key'] as String? ?? '';
@@ -1051,15 +1523,6 @@ class QuranFoundationApi {
         words.add(MushafWord.fromJson(map));
       }
     }
-
-    // 🔎 DEBUG SEMENTARA
-    debugPrint('[QCF-DEBUG] Total kata ter-parse: ${words.length}');
-    if (words.isNotEmpty) {
-      debugPrint(
-        '[QCF-DEBUG] Contoh code_v2 kata pertama: "${words.first.codeV2}"',
-      );
-    }
-
     return words;
   }
 }
