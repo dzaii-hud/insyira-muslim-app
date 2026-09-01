@@ -9,11 +9,18 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 class DetailSurahScreen extends StatefulWidget {
   final int nomorSurah;
   final int? initialAyat;
+  // --- [BARU] Buka langsung ke mode & posisi tertentu (dipakai widget
+  // "Terakhir Dibaca" supaya bisa lanjut persis dari mode & halaman yang
+  // terakhir ditandai, bukan selalu mulai dari mode terjemahan) ---
+  final String? initialMode; // 'mushaf' atau null/'translation'
+  final int? initialMushafPage;
 
   const DetailSurahScreen({
     super.key,
     required this.nomorSurah,
     this.initialAyat,
+    this.initialMode,
+    this.initialMushafPage,
   });
 
   @override
@@ -26,7 +33,12 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
 
   // --- REMOTE CONTROL UNTUK SCROLL (MODE TERJEMAHAN) ---
   final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
   bool _hasScrolled = false;
+
+  // --- [BARU] MAPPING AYAT -> NOMOR HALAMAN MUSHAF (buat surah ini saja) ---
+  Map<int, int> _ayahToPageMap = {};
 
   // --- VARIABEL KONTROL MODE MUSHAF / TERJEMAHAN ---
   bool _isMushafMode = false; // Default: False (Mode Terjemahan)
@@ -165,11 +177,18 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
   @override
   void initState() {
     super.initState();
-    // Inisialisasi halaman buku agar langsung melompat ke halaman awal Surah yang dipilih
-    _currentPageIndex = _surahStartPage[widget.nomorSurah - 1] - 1;
+    // Inisialisasi halaman buku: kalau dibuka lewat "Terakhir Dibaca" dalam
+    // mode mushaf, langsung ke halaman itu. Kalau tidak, default ke halaman
+    // awal Surah yang dipilih.
+    _currentPageIndex = widget.initialMode == 'mushaf'
+        ? (widget.initialMushafPage ?? _surahStartPage[widget.nomorSurah - 1]) -
+              1
+        : _surahStartPage[widget.nomorSurah - 1] - 1;
     _pageController = PageController(initialPage: _currentPageIndex);
+    _isMushafMode = widget.initialMode == 'mushaf';
 
     _fetchDetailSurah();
+    _loadAyahPageMapping();
   }
 
   @override
@@ -214,10 +233,84 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     }
   }
 
+  // --- [BARU] Ambil mapping "ayat ke berapa -> ada di halaman mushaf berapa"
+  // buat surah ini. Dipakai supaya pas pindah ke mode mushaf, langsung
+  // lompat ke halaman yang sesuai posisi baca terakhir (bukan dari awal surah).
+  Future<void> _loadAyahPageMapping() async {
+    try {
+      final map = await _quranApi.fetchAyahPageMap(widget.nomorSurah);
+      if (!mounted) return;
+      setState(() {
+        _ayahToPageMap = map;
+      });
+    } catch (e) {
+      debugPrint('Gagal memuat mapping ayat-halaman: $e');
+      // Gagal diam-diam gapapa — nanti fallback ke halaman awal surah.
+    }
+  }
+
+  // --- [BARU] Deteksi nomor ayat yang lagi paling atas/kelihatan di layar
+  // waktu user membaca mode terjemahan.
+  int? _getCurrentlyVisibleAyahNumber() {
+    if (_surahData == null) return null;
+    final positions = _itemPositionsListener.itemPositions.value;
+    if (positions.isEmpty) return null;
+
+    final hasBismillah = widget.nomorSurah != 1 && widget.nomorSurah != 9;
+    final headerCount = hasBismillah ? 2 : 1;
+
+    final visible =
+        positions
+            .where((p) => p.itemTrailingEdge > 0 && p.itemLeadingEdge < 1)
+            .toList()
+          ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+    if (visible.isEmpty) return null;
+
+    final ayatList = _surahData!['ayat'] as List<dynamic>;
+    final ayahIndex = visible.first.index - headerCount;
+    if (ayahIndex < 0 || ayahIndex >= ayatList.length) return null;
+
+    return ayatList[ayahIndex]['nomorAyat'] as int;
+  }
+
+  // --- [BARU] Pindah ke mode mushaf, otomatis lompat ke halaman yang
+  // sesuai dengan ayat terakhir yang lagi dibaca di mode terjemahan.
+  void _switchToMushafMode() {
+    final currentAyah = _getCurrentlyVisibleAyahNumber();
+    int targetPage = _surahStartPage[widget.nomorSurah - 1]; // fallback
+
+    if (currentAyah != null && _ayahToPageMap.containsKey(currentAyah)) {
+      targetPage = _ayahToPageMap[currentAyah]!;
+    }
+
+    setState(() {
+      _isMushafMode = true;
+      _currentPageIndex = targetPage - 1;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_pageController.hasClients) {
+        _pageController.jumpToPage(_currentPageIndex);
+      }
+    });
+  }
+
   // --- FUNGSI SIMPAN BOOKMARK (TERAKHIR DIBACA) ---
+  // --- [BARU] Nama surah yang SEBENARNYA tampil di halaman mushaf yang
+  // lagi dibuka (bisa beda dari surah yang pertama kali dibuka, karena user
+  // bisa swipe jauh). Fallback ke nama surah awal kalau data belum ke-load.
+  String get _currentMushafSurahName {
+    final chapter = _pageDataCache[_currentPageIndex + 1]?.primaryChapterNumber;
+    if (chapter != null && chapter >= 1 && chapter <= 114) {
+      return kSurahLatinNames[chapter - 1];
+    }
+    return _surahData != null ? _surahData!['namaLatin'] : '';
+  }
+
   Future<void> _saveBookmark(int nomorAyat) async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_read_mode', 'translation');
       await prefs.setInt('last_surah_number', widget.nomorSurah);
       await prefs.setString('last_surah_name', _surahData!['namaLatin']);
       await prefs.setInt('last_ayat', nomorAyat);
@@ -302,11 +395,7 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                     Icons.menu_book_rounded,
                     color: Color(0xFF003527),
                   ),
-                  onPressed: () {
-                    setState(() {
-                      _isMushafMode = true; // Tukar ke Mushaf Mode
-                    });
-                  },
+                  onPressed: _switchToMushafMode,
                 ),
               ],
             ),
@@ -396,6 +485,7 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
 
     return ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
+      itemPositionsListener: _itemPositionsListener,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       itemCount: headerCount + ayatList.length + 1,
       itemBuilder: (context, index) {
@@ -712,15 +802,33 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     final words = results[1] as List<MushafWord>;
     final pageData = MushafPageData.fromWords(pageNumber, words);
     _pageDataCache[pageNumber] = pageData;
+
+    // Refresh top bar (nama surah) begitu data halaman yang lagi AKTIF
+    // dibuka ini selesai di-fetch — biar nama surahnya langsung akurat,
+    // bukan nunggu trigger rebuild lain.
+    if (mounted && pageNumber == _currentPageIndex + 1) {
+      setState(() {});
+    }
+
     return pageData;
   }
 
   // --- [BARU] Simpan halaman mushaf yang ditandai user ---
   Future<void> _saveMushafBookmark(int pageNumber) async {
     try {
+      // Ambil surah yang SEBENARNYA tampil di halaman ini (bisa beda dari
+      // widget.nomorSurah kalau user udah swipe jauh ke surah lain).
+      final actualChapter =
+          _pageDataCache[pageNumber]?.primaryChapterNumber ?? widget.nomorSurah;
+      final actualChapterName = (actualChapter >= 1 && actualChapter <= 114)
+          ? kSurahLatinNames[actualChapter - 1]
+          : (_surahData?['namaLatin'] ?? '');
+
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_read_mode', 'mushaf');
       await prefs.setInt('last_mushaf_page', pageNumber);
-      await prefs.setInt('last_surah_number', widget.nomorSurah);
+      await prefs.setInt('last_surah_number', actualChapter);
+      await prefs.setString('last_surah_name', actualChapterName);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1085,7 +1193,7 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                   ),
                   Expanded(
                     child: Text(
-                      _surahData != null ? _surahData!['namaLatin'] : '',
+                      _currentMushafSurahName,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Color(0xFF003527),
@@ -1263,6 +1371,19 @@ class MushafPageData {
 
   MushafPageData({required this.pageNumber, required this.items});
 
+  /// Nomor surah utama yang tampil di halaman ini (diambil dari kata
+  /// pertama baris pertama). Dipakai buat nampilin nama surah yang BENAR
+  /// di top bar & bookmark mode mushaf, karena user bisa swipe jauh sampai
+  /// masuk ke surah lain dari surah yang pertama kali dibuka.
+  int get primaryChapterNumber {
+    for (final item in items) {
+      if (item is MushafLineItem && item.line.words.isNotEmpty) {
+        return item.line.words.first.chapterNumber;
+      }
+    }
+    return 0;
+  }
+
   factory MushafPageData.fromWords(int pageNumber, List<MushafWord> words) {
     final Map<int, List<MushafWord>> grouped = {};
     for (final w in words) {
@@ -1433,6 +1554,127 @@ const List<String> kSurahArabicNames = [
   'الناس',
 ];
 
+/// Nama Latin 114 surah (index 0 = surah 1), dipakai supaya mode mushaf bisa
+/// menampilkan & menyimpan nama surah yang BENAR sesuai halaman yang lagi
+/// dibuka — bukan cuma surah yang pertama kali dibuka user (karena user bisa
+/// swipe jauh sampai masuk ke surah lain).
+const List<String> kSurahLatinNames = [
+  'Al-Fatihah',
+  'Al-Baqarah',
+  'Ali \'Imran',
+  'An-Nisa',
+  'Al-Ma\'idah',
+  'Al-An\'am',
+  'Al-A\'raf',
+  'Al-Anfal',
+  'At-Taubah',
+  'Yunus',
+  'Hud',
+  'Yusuf',
+  'Ar-Ra\'d',
+  'Ibrahim',
+  'Al-Hijr',
+  'An-Nahl',
+  'Al-Isra',
+  'Al-Kahf',
+  'Maryam',
+  'Taha',
+  'Al-Anbiya',
+  'Al-Hajj',
+  'Al-Mu\'minun',
+  'An-Nur',
+  'Al-Furqan',
+  'Asy-Syu\'ara',
+  'An-Naml',
+  'Al-Qasas',
+  'Al-\'Ankabut',
+  'Ar-Rum',
+  'Luqman',
+  'As-Sajdah',
+  'Al-Ahzab',
+  'Saba',
+  'Fatir',
+  'Yasin',
+  'As-Saffat',
+  'Sad',
+  'Az-Zumar',
+  'Ghafir',
+  'Fussilat',
+  'Asy-Syura',
+  'Az-Zukhruf',
+  'Ad-Dukhan',
+  'Al-Jasiyah',
+  'Al-Ahqaf',
+  'Muhammad',
+  'Al-Fath',
+  'Al-Hujurat',
+  'Qaf',
+  'Az-Zariyat',
+  'At-Tur',
+  'An-Najm',
+  'Al-Qamar',
+  'Ar-Rahman',
+  'Al-Waqi\'ah',
+  'Al-Hadid',
+  'Al-Mujadalah',
+  'Al-Hasyr',
+  'Al-Mumtahanah',
+  'As-Saff',
+  'Al-Jumu\'ah',
+  'Al-Munafiqun',
+  'At-Taghabun',
+  'At-Talaq',
+  'At-Tahrim',
+  'Al-Mulk',
+  'Al-Qalam',
+  'Al-Haqqah',
+  'Al-Ma\'arij',
+  'Nuh',
+  'Al-Jinn',
+  'Al-Muzzammil',
+  'Al-Muddassir',
+  'Al-Qiyamah',
+  'Al-Insan',
+  'Al-Mursalat',
+  'An-Naba',
+  'An-Nazi\'at',
+  '\'Abasa',
+  'At-Takwir',
+  'Al-Infitar',
+  'Al-Mutaffifin',
+  'Al-Insyiqaq',
+  'Al-Buruj',
+  'At-Tariq',
+  'Al-A\'la',
+  'Al-Ghasyiyah',
+  'Al-Fajr',
+  'Al-Balad',
+  'Asy-Syams',
+  'Al-Lail',
+  'Ad-Duha',
+  'Asy-Syarh',
+  'At-Tin',
+  'Al-\'Alaq',
+  'Al-Qadr',
+  'Al-Bayyinah',
+  'Az-Zalzalah',
+  'Al-\'Adiyat',
+  'Al-Qari\'ah',
+  'At-Takasur',
+  'Al-\'Asr',
+  'Al-Humazah',
+  'Al-Fil',
+  'Quraisy',
+  'Al-Ma\'un',
+  'Al-Kausar',
+  'Al-Kafirun',
+  'An-Nasr',
+  'Al-Masad',
+  'Al-Ikhlas',
+  'Al-Falaq',
+  'An-Nas',
+];
+
 /// Komunikasi ke Quran Foundation Content API (penerus resmi api.quran.com).
 /// Dokumentasi: https://api-docs.quran.foundation
 ///
@@ -1524,6 +1766,46 @@ class QuranFoundationApi {
       }
     }
     return words;
+  }
+
+  /// Ambil mapping ringan "nomor ayat -> nomor halaman mushaf" untuk satu
+  /// surah penuh. Ini cuma minta metadata dasar (bukan words/font), jadi
+  /// cepat dan tidak kena batasan permission yang sama seperti fetchPageWords.
+  Future<Map<int, int>> fetchAyahPageMap(int chapterNumber) async {
+    final token = await _getAccessToken();
+
+    final uri = Uri.parse('$_apiBase/verses/by_chapter/$chapterNumber').replace(
+      queryParameters: {
+        'fields': 'page_number',
+        'per_page': '300', // surah terpanjang (Al-Baqarah) = 286 ayat
+        'mushaf': '$_mushafIdQcfV2',
+      },
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {'x-auth-token': token, 'x-client-id': clientId},
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Gagal ambil mapping ayat-halaman surah $chapterNumber '
+        '(${response.statusCode}): ${response.body}',
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final verses = data['verses'] as List<dynamic>? ?? [];
+
+    final map = <int, int>{};
+    for (final v in verses) {
+      final ayah = v['verse_number'] as int?;
+      final page = v['page_number'] as int?;
+      if (ayah != null && page != null) {
+        map[ayah] = page;
+      }
+    }
+    return map;
   }
 }
 
