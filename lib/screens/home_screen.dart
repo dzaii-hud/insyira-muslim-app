@@ -10,6 +10,9 @@ import 'quran_screen.dart';
 import 'qibla_screen.dart';
 import 'kajian_screen.dart';
 import 'dzikir_screen.dart';
+import 'settings_screen.dart';
+import '../theme/app_theme.dart';
+import '../services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,7 +22,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _selectedIndex = 0;
+  final NotificationService _notificationService = NotificationService();
+  // ... sisa variabel
 
   // --- VARIABEL DATA ASLI (JADWAL SHOLAT & GPS) ---
   String _locationName = "Mencari lokasi...";
@@ -29,16 +35,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _countdownText = "--:--:--";
   String _activePrayer = "Dzuhur";
 
-  // ====== 1. TAMBAHKAN VARIABEL MEMORI BACAAN DI SINI ======
+  // ====== VARIABEL MEMORI BACAAN ======
   String? lastReadSurah;
   int? lastReadSurahNumber;
   int? lastReadAyat;
-  // =========================================================
+  String? lastReadMode; // 'mushaf' atau 'translation'
+  int? lastReadMushafPage;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _notificationService.init();
     _getLocationAndPrayerTimes();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -54,6 +62,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       lastReadSurahNumber = prefs.getInt('last_surah_number');
       lastReadSurah = prefs.getString('last_surah_name');
       lastReadAyat = prefs.getInt('last_ayat');
+      // ====== [BARU] Tambahkan ini ======
+      lastReadMode = prefs.getString('last_read_mode');
+      lastReadMushafPage = prefs.getInt('last_mushaf_page');
+      // =====================================
     });
   }
 
@@ -86,33 +98,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
-            backgroundColor: const Color(0xFF002117), // surface-container-low
+            backgroundColor: AppColors.getSurfaceContainerLow(context),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: const BorderSide(color: Color(0xFF003D2D)),
+              side: BorderSide(color: AppColors.getSurfaceVariant(context)),
             ),
-            title: const Text(
+            title: Text(
               'GPS Tidak Aktif',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: AppColors.getTextPrimary(context),
               ),
             ),
-            content: const Text(
+            content: Text(
               'Jadwal sholat membutuhkan lokasi. Mohon aktifkan GPS di pengaturan HP kamu.',
-              style: TextStyle(color: Color(0xFFBEC9C2)),
+              style: TextStyle(color: AppColors.getOnSurfaceVariant(context)),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text(
+                child: Text(
                   'Batal',
-                  style: TextStyle(color: Color(0xFFBEC9C2)),
+                  style: TextStyle(
+                    color: AppColors.getOnSurfaceVariant(context),
+                  ),
                 ),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFBBF24), // gold-leaf
+                  backgroundColor: AppColors.getGoldLeaf(context),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -121,11 +135,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   Navigator.of(context).pop();
                   await Geolocator.openLocationSettings();
                 },
-                child: const Text(
+                child: Text(
                   'Aktifkan GPS',
                   style: TextStyle(
-                    color: Color(0xFF00120B),
-                  ), // surface-container-lowest
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0xFF00120B)
+                        : Colors.white,
+                  ),
                 ),
               ),
             ],
@@ -179,6 +195,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _prayerTimes?.currentPrayer() ?? Prayer.fajr,
       );
     });
+
+    // Schedule notifications after getting prayer times
+    if (_prayerTimes != null) {
+      await _notificationService.schedulePrayerNotifications(_prayerTimes!);
+    }
   }
 
   void _updateCountdown() {
@@ -253,32 +274,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  void _openSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SettingsScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF022C22), // deep-forest
+      key: _scaffoldKey, // Tambahkan ini
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(
-          0xFF022C22,
-        ).withOpacity(0.95), // Transparan gelap
+        backgroundColor: Theme.of(
+          context,
+        ).scaffoldBackgroundColor.withOpacity(0.95),
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
-          child: GestureDetector(
-            onTap: () {},
-            child: const CircleAvatar(
-              backgroundImage: NetworkImage(
-                'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=200&auto=format&fit=crop',
-              ),
-            ),
+        leading: IconButton(
+          icon: Icon(
+            Icons.menu,
+            color: AppColors.getPrimaryText(context),
+            size: 28,
           ),
+          onPressed: () {
+            _scaffoldKey.currentState?.openDrawer(); // Pakai GlobalKey
+          },
         ),
-        leadingWidth: 60,
-        title: const Text(
+        leadingWidth: 56,
+        title: Text(
           'Insyira',
           style: TextStyle(
-            color: Color(0xFF8BD6B6), // primary text
+            color: AppColors.getPrimaryText(context),
             fontWeight: FontWeight.bold,
             fontSize: 24,
             letterSpacing: -0.5,
@@ -286,20 +314,121 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
         centerTitle: true,
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: IconButton(
-              icon: const Icon(
-                Icons.notifications_none,
-                color: Color(0xFF8BD6B6), // primary text
-                size: 28,
-              ),
-              onPressed: () {},
+          IconButton(
+            icon: Icon(
+              Icons.notifications_none,
+              color: AppColors.getPrimaryText(context),
+              size: 28,
             ),
+            onPressed: () {
+              // Aksi untuk notifikasi
+              // SnackBar untuk tombol notifikasi di AppBar
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text(
+                    'Tidak ada notifikasi baru',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  backgroundColor: const Color(0xFF003527),
+                  behavior: SnackBarBehavior.floating,
+                  margin: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).size.height - 200,
+                    left: 20,
+                    right: 20,
+                  ),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
           ),
+          const SizedBox(width: 8),
         ],
       ),
-
+      // ... sisa code sama
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF002117)
+                    : const Color(0xFF00695C),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withOpacity(0.2),
+                    ),
+                    child: const Icon(
+                      Icons.mosque,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Insyira',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Text(
+                    'Muslim App',
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.settings,
+                color: AppColors.getPrimaryText(context),
+              ),
+              title: Text(
+                'Pengaturan',
+                style: TextStyle(color: AppColors.getTextPrimary(context)),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                _openSettings();
+              },
+            ),
+            Divider(color: Theme.of(context).dividerColor),
+            ListTile(
+              leading: Icon(
+                Icons.info,
+                color: AppColors.getPrimaryText(context),
+              ),
+              title: Text(
+                'Tentang',
+                style: TextStyle(color: AppColors.getTextPrimary(context)),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Insyira Muslim App v1.0.0'),
+                    backgroundColor: AppColors.getSurfaceVariant(context),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         transitionBuilder: (Widget child, Animation<double> animation) {
@@ -316,24 +445,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         },
         child: _buildBodyContent(),
       ),
-
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.4),
+              color: Colors.black.withOpacity(0.2),
               blurRadius: 20,
               offset: const Offset(0, -4),
             ),
           ],
         ),
         child: BottomNavigationBar(
-          backgroundColor: const Color(0xFF00120B), // surface-container-lowest
+          backgroundColor: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF00120B)
+              : Colors.white,
           type: BottomNavigationBarType.fixed,
           currentIndex: _selectedIndex,
           onTap: _onItemTapped,
-          selectedItemColor: const Color(0xFFFBBF24), // gold-leaf
-          unselectedItemColor: const Color(0xFFBEC9C2), // on-surface-variant
+          selectedItemColor: AppColors.getGoldLeaf(context),
+          unselectedItemColor: AppColors.getOnSurfaceVariant(context),
           showUnselectedLabels: true,
           items: const [
             BottomNavigationBarItem(
@@ -375,8 +505,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _buildKajianHariIni(),
               const SizedBox(height: 20),
               _buildLanjutMembaca(),
-
-              // --- PENAMBAHAN WIDGET BARU DI SINI ---
               const SizedBox(height: 25),
               _buildKajianOnline(),
               const SizedBox(height: 25),
@@ -394,11 +522,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       case 4:
         return const DzikirScreen(key: ValueKey(4));
       default:
-        return const Center(
-          key: ValueKey('error'),
+        return Center(
+          key: const ValueKey('error'),
           child: Text(
             'Halaman tidak ditemukan',
-            style: TextStyle(color: Colors.white),
+            style: TextStyle(color: AppColors.getTextPrimary(context)),
           ),
         );
     }
@@ -421,12 +549,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF002117), // surface-container-low
+        color: AppColors.getSurfaceContainerLow(context),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF003D2D)), // surface-variant
+        border: Border.all(color: AppColors.getSurfaceVariant(context)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.4),
+            color: Colors.black.withOpacity(0.2),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -446,87 +574,123 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 fit: BoxFit.cover,
               ),
             ),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(20),
-                  topRight: Radius.circular(20),
-                ),
-                // Overlay warna hijau dari HTML (primary-container) agar gambar menyatu dengan tema
-                color: const Color(0xFF065F46).withOpacity(0.85),
-              ),
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'NEXT PRAYER', // Sesuai HTML
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.5),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'SHALAT SELANJUTNYA',
                             style: TextStyle(
-                              color: Color(0xFF8BD6B6), // primary-fixed-dim
+                              color: Colors.white,
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1.2,
                             ),
                           ),
-                          Text(
-                            nextPrayerNameString,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            nextPrayerTimeString,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            _countdownText,
-                            style: const TextStyle(
-                              color: Color(0xFFA6F2D1), // primary-fixed
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.location_on,
-                        color: Color(0xFF8BD6B6), // primary-fixed-dim
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _locationName,
-                        style: const TextStyle(
-                          color: Color(0xFFBEC9C2), // on-surface-variant
-                          fontSize: 12,
                         ),
+                        const SizedBox(height: 8),
+                        Text(
+                          nextPrayerNameString,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black,
+                                blurRadius: 4,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          nextPrayerTimeString,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black,
+                                blurRadius: 4,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          _countdownText,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black,
+                                blurRadius: 4,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on,
+                      color: Colors.white,
+                      size: 16,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black,
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _locationName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black,
+                            blurRadius: 4,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
           Padding(
@@ -582,8 +746,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: isActive
-            ? const Color(0xFF003D2D)
-            : Colors.transparent, // surface-variant
+            ? AppColors.getSurfaceVariant(context)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
@@ -592,8 +756,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             name,
             style: TextStyle(
               color: isActive
-                  ? const Color(0xFFFBBF24)
-                  : const Color(0xFFBEC9C2), // gold-leaf vs on-surface-variant
+                  ? AppColors.getGoldLeaf(context)
+                  : AppColors.getOnSurfaceVariant(context),
               fontSize: 12,
               fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
             ),
@@ -602,7 +766,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Text(
             time,
             style: TextStyle(
-              color: isActive ? const Color(0xFFFBBF24) : Colors.white,
+              color: isActive
+                  ? AppColors.getGoldLeaf(context)
+                  : AppColors.getTextPrimary(context),
               fontSize: 14,
               fontWeight: FontWeight.bold,
             ),
@@ -662,14 +828,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _buildMenuItem(IconData icon, String title, VoidCallback onTap) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF002117), // surface-container-low
+        color: AppColors.getSurfaceContainerLow(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFF003D2D),
-        ), // border-surface-variant
+        border: Border.all(color: AppColors.getSurfaceVariant(context)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.4),
+            color: Colors.black.withOpacity(0.2),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -687,21 +851,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               children: [
                 Container(
                   padding: const EdgeInsets.all(12),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF003D2D), // surface-variant
+                  decoration: BoxDecoration(
+                    color: AppColors.getSurfaceVariant(context),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     icon,
-                    color: const Color(0xFFFBBF24),
+                    color: AppColors.getGoldLeaf(context),
                     size: 28,
-                  ), // gold-leaf
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: AppColors.getTextPrimary(context),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
                   ),
@@ -722,33 +886,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Daily Inspiration', // Sesuai HTML
+            Text(
+              'Fawaidh Asatidz',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: AppColors.getTextPrimary(context),
               ),
             ),
             TextButton(
               onPressed: () {},
-              child: const Text(
-                'View All',
-                style: TextStyle(color: Color(0xFFFBBF24)), // gold-leaf
+              child: Text(
+                'Lihat Semua',
+                style: TextStyle(color: AppColors.getGoldLeaf(context)),
               ),
             ),
           ],
         ),
         Container(
           decoration: BoxDecoration(
-            color: const Color(0xFF002117), // surface-container-low
+            color: AppColors.getSurfaceContainerLow(context),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: const Color(0xFF003D2D),
-            ), // surface-variant
+            border: Border.all(color: AppColors.getSurfaceVariant(context)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.4),
+                color: Colors.black.withOpacity(0.2),
                 blurRadius: 24,
                 offset: const Offset(0, 8),
               ),
@@ -759,32 +921,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children: [
               Container(
                 height: 150,
-                decoration: const BoxDecoration(
-                  borderRadius: BorderRadius.only(
+                decoration: BoxDecoration(
+                  borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(16),
                     topRight: Radius.circular(16),
                   ),
-                  image: DecorationImage(
-                    image: NetworkImage(
-                      'https://images.unsplash.com/photo-1590076215667-875d4efbf2b9?q=80&w=600&auto=format&fit=crop',
-                    ),
-                    fit: BoxFit.cover,
-                  ),
+                  color: AppColors.getSurfaceVariant(context),
                 ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.4),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      topRight: Radius.circular(16),
-                    ),
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.play_circle_outline,
-                      color: Colors.white,
-                      size: 48,
-                    ),
+                child: Center(
+                  child: Icon(
+                    Icons.play_circle_outline,
+                    color: AppColors.getGoldLeaf(context),
+                    size: 48,
                   ),
                 ),
               ),
@@ -799,36 +947,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFBBF24).withOpacity(0.15),
+                        color: AppColors.getGoldLeaf(context).withOpacity(0.15),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: const Color(0xFFFBBF24).withOpacity(0.3),
+                          color: AppColors.getGoldLeaf(
+                            context,
+                          ).withOpacity(0.3),
                         ),
                       ),
-                      child: const Text(
+                      child: Text(
                         'Live Pukul 20:00',
                         style: TextStyle(
-                          color: Color(0xFFFBBF24), // gold-leaf
+                          color: AppColors.getGoldLeaf(context),
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                     const SizedBox(height: 10),
-                    const Text(
+                    Text(
                       'Tafsir Surat Al-Baqarah: Menghadapi Cobaan',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: AppColors.getTextPrimary(context),
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       'Kajian rutin mingguan membahas mendalam tafsir dan implementasi...',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Color(0xFFBEC9C2), // on-surface-variant
+                        color: AppColors.getOnSurfaceVariant(context),
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -836,25 +986,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     const SizedBox(height: 15),
                     Row(
                       children: [
-                        const CircleAvatar(
-                          backgroundColor: Color(0xFF003D2D), // surface-variant
+                        CircleAvatar(
+                          backgroundColor: AppColors.getSurfaceVariant(context),
                           radius: 14,
                           child: Text(
                             'UA',
                             style: TextStyle(
-                              color: Color(0xFFFBBF24), // gold-leaf
+                              color: AppColors.getGoldLeaf(context),
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Text(
+                        Text(
                           'Ustadz Abdullah',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: AppColors.getTextPrimary(context),
                           ),
                         ),
                       ],
@@ -870,6 +1020,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   // --- WIDGET LANJUT MEMBACA ---
+  // --- WIDGET LANJUT MEMBACA ---
   Widget _buildLanjutMembaca() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -877,19 +1028,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Continue Reading', // Sesuai HTML
+            Text(
+              'Lanjut Membaca',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: AppColors.getTextPrimary(context),
               ),
             ),
             TextButton(
-              onPressed: () {},
-              child: const Text(
-                'View All',
-                style: TextStyle(color: Color(0xFFFBBF24)), // gold-leaf
+              onPressed: () {
+                // Pindah ke Quran Screen (tab index 1)
+                _onItemTapped(1);
+              },
+              child: Text(
+                'Lihat Semua',
+                style: TextStyle(color: AppColors.getGoldLeaf(context)),
               ),
             ),
           ],
@@ -900,6 +1054,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             String? freshSurah = lastReadSurah;
             int? freshNumber = lastReadSurahNumber;
             int? freshAyat = lastReadAyat;
+            String? freshMode = lastReadMode;
+            int? freshPage = lastReadMushafPage;
 
             if (snapshot.hasData) {
               freshSurah =
@@ -908,26 +1064,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   snapshot.data!.getInt('last_surah_number') ??
                   lastReadSurahNumber;
               freshAyat = snapshot.data!.getInt('last_ayat') ?? lastReadAyat;
+              freshMode =
+                  snapshot.data!.getString('last_read_mode') ?? lastReadMode;
+              freshPage =
+                  snapshot.data!.getInt('last_mushaf_page') ??
+                  lastReadMushafPage;
             }
+
+            final bool isMushaf = freshMode == 'mushaf';
+            final bool hasBookmark =
+                freshNumber != null &&
+                (isMushaf ? freshPage != null : freshAyat != null);
 
             return InkWell(
               borderRadius: BorderRadius.circular(16),
               onTap: () {
-                if (freshNumber != null) {
+                if (hasBookmark) {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => DetailSurahScreen(
                         nomorSurah: freshNumber!,
-                        initialAyat: freshAyat,
+                        initialAyat: isMushaf ? null : freshAyat,
+                        initialMode: isMushaf ? 'mushaf' : null,
+                        initialMushafPage: isMushaf ? freshPage : null,
                       ),
                     ),
                   ).then((_) => _loadLastRead());
                 } else {
+                  // SnackBar untuk "Belum ada ayat yang ditandai"
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Belum ada ayat yang ditandai 🔖'),
-                      backgroundColor: Color(0xFF003D2D), // surface-variant
+                    SnackBar(
+                      content: const Text(
+                        'Belum ada ayat yang ditandai 🔖',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      backgroundColor: const Color(0xFF904D00),
+                      behavior: SnackBarBehavior.floating,
+                      margin: EdgeInsets.only(
+                        bottom: MediaQuery.of(context).size.height - 100,
+                        left: 20,
+                        right: 20,
+                      ),
+                      duration: const Duration(seconds: 2),
                     ),
                   );
                 }
@@ -935,14 +1117,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               child: Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF002117), // surface-container-low
+                  color: AppColors.getSurfaceContainerLow(context),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: const Color(0xFF003D2D),
-                  ), // surface-variant
+                    color: AppColors.getSurfaceVariant(context),
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.4),
+                      color: Colors.black.withOpacity(0.2),
                       blurRadius: 24,
                       offset: const Offset(0, 8),
                     ),
@@ -954,16 +1136,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       width: 45,
                       height: 45,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF003D2D), // surface-variant
+                        color: AppColors.getSurfaceVariant(context),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Center(
                         child: Text(
-                          freshNumber != null ? freshNumber.toString() : '-',
-                          style: const TextStyle(
+                          isMushaf && hasBookmark
+                              ? freshPage.toString()
+                              : (freshNumber != null
+                                    ? freshNumber.toString()
+                                    : '-'),
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: AppColors.getTextPrimary(context),
                           ),
                         ),
                       ),
@@ -974,29 +1160,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            freshSurah ?? 'Belum ada bacaan',
-                            style: const TextStyle(
+                            isMushaf && hasBookmark
+                                ? 'Halaman $freshPage'
+                                : (freshSurah ?? 'Belum ada bacaan'),
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                              color: AppColors.getTextPrimary(context),
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            freshAyat != null
-                                ? 'Ayat $freshAyat'
-                                : 'Mulai membaca Al-Quran',
-                            style: const TextStyle(
+                            !hasBookmark
+                                ? 'Mulai membaca Al-Quran'
+                                : (isMushaf
+                                      ? (freshSurah ?? '')
+                                      : 'Ayat $freshAyat'),
+                            style: TextStyle(
                               fontSize: 14,
-                              color: Color(0xFFBEC9C2),
+                              color: AppColors.getOnSurfaceVariant(context),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const Icon(
+                    Icon(
                       Icons.arrow_forward_ios,
-                      color: Color(0xFFFBBF24),
+                      color: AppColors.getGoldLeaf(context),
                       size: 16,
                     ),
                   ],
@@ -1009,9 +1199,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  // ==========================================
-  // WIDGET BARU: KAJIAN ONLINE (Sesuai Referensi Gambar)
-  // ==========================================
+  // --- WIDGET KAJIAN ONLINE ---
   Widget _buildKajianOnline() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1019,21 +1207,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'Kajian Online',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Colors.white,
+                color: AppColors.getTextPrimary(context),
               ),
             ),
             TextButton(
               onPressed: () {},
-              child: const Text(
+              child: Text(
                 'Lihat Semua',
-                style: TextStyle(
-                  color: Color(0xFF8BD6B6),
-                ), // Mengikuti aksen hijau
+                style: TextStyle(color: AppColors.getPrimaryText(context)),
               ),
             ),
           ],
@@ -1042,15 +1228,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           height: 200,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: 3, // Dibuat 3 item dummy untuk simulasi scroll
+            itemCount: 3,
             separatorBuilder: (context, index) => const SizedBox(width: 16),
             itemBuilder: (context, index) {
               return Container(
                 width: 260,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF002117), // surface-container-low
+                  color: AppColors.getSurfaceContainerLow(context),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF003D2D)),
+                  border: Border.all(
+                    color: AppColors.getSurfaceVariant(context),
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.2),
@@ -1062,24 +1250,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Gambar Thumbnail
                     Container(
                       height: 110,
                       decoration: BoxDecoration(
                         borderRadius: const BorderRadius.vertical(
                           top: Radius.circular(16),
                         ),
-                        image: DecorationImage(
-                          image: NetworkImage(
-                            index == 0
-                                ? 'https://images.unsplash.com/photo-1609599006353-e629af92ce32?q=80&w=600&auto=format&fit=crop'
-                                : 'https://images.unsplash.com/photo-1584227092147-36e676135838?q=80&w=600&auto=format&fit=crop',
-                          ),
-                          fit: BoxFit.cover,
+                        color: AppColors.getSurfaceVariant(context),
+                      ),
+                      child: Center(
+                        child: Icon(
+                          Icons.video_library,
+                          color: AppColors.getGoldLeaf(context),
+                          size: 40,
                         ),
                       ),
                     ),
-                    // Judul & Pemateri
                     Padding(
                       padding: const EdgeInsets.all(12),
                       child: Column(
@@ -1089,8 +1275,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             index == 0
                                 ? 'Riyadush Shalihin 2.103: Tidak Memberikan Wejangan Setiap Saat'
                                 : 'Kitab Tauhid #4: Takut Syirik',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: AppColors.getTextPrimary(context),
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
                               height: 1.2,
@@ -1101,8 +1287,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           const SizedBox(height: 6),
                           Text(
                             'Ustadz Dr. Firanda Andirja, MA',
-                            style: const TextStyle(
-                              color: Color(0xFFBEC9C2),
+                            style: TextStyle(
+                              color: AppColors.getOnSurfaceVariant(context),
                               fontSize: 12,
                             ),
                             maxLines: 1,
@@ -1121,19 +1307,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  // ==========================================
-  // WIDGET BARU: SALURAN LIVE (Sesuai Referensi Gambar)
-  // ==========================================
+  // --- WIDGET SALURAN LIVE ---
   Widget _buildSaluranLive() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Saluran Live',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: AppColors.getTextPrimary(context),
           ),
         ),
         const SizedBox(height: 16),
@@ -1149,26 +1333,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 width: 220,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  color: const Color(
-                    0xFF003D2D,
-                  ), // surface-variant sebagai fallback
-                  image: DecorationImage(
-                    image: NetworkImage(
-                      isMadinah
-                          ? 'https://images.unsplash.com/photo-1591461947262-4217197b91ba?q=80&w=600&auto=format&fit=crop' // Masjid Nabawi
-                          : 'https://images.unsplash.com/photo-1565552643954-1eb956276dc0?q=80&w=600&auto=format&fit=crop', // Masjidil Haram
-                    ),
-                    fit: BoxFit.cover,
-                    // Menambahkan filter gelap agar text tetap terbaca
-                    colorFilter: ColorFilter.mode(
-                      Colors.black.withOpacity(0.5),
-                      BlendMode.darken,
-                    ),
-                  ),
+                  color: AppColors.getSurfaceVariant(context),
                 ),
                 child: Stack(
                   children: [
-                    // Badge Live
                     Positioned(
                       top: 12,
                       left: 12,
@@ -1181,9 +1349,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           color: Colors.redAccent,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Row(
+                        child: const Row(
                           mainAxisSize: MainAxisSize.min,
-                          children: const [
+                          children: [
                             Icon(Icons.circle, color: Colors.white, size: 8),
                             SizedBox(width: 4),
                             Text(
@@ -1198,25 +1366,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       ),
                     ),
-                    // Teks Judul Channel
                     Positioned(
                       top: 40,
                       left: 12,
                       child: Text(
                         isMadinah ? 'Live Madinah' : 'Live Mekkah',
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: AppColors.getTextPrimary(context),
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
-                    // Icon Play (sebagai pemanis seperti di gambar)
-                    const Center(
+                    Center(
                       child: Icon(
-                        Icons
-                            .image_outlined, // Sesuai placeholder di gambar asli
-                        color: Colors.white54,
+                        Icons.live_tv,
+                        color: AppColors.getGoldLeaf(context),
                         size: 40,
                       ),
                     ),

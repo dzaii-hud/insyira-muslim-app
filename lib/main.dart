@@ -1,35 +1,53 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/splash_screen.dart';
+import 'theme/app_theme.dart';
 
-void main() {
-  runApp(const InsyiraApp());
+// Global key untuk akses state dari mana saja
+final GlobalKey<_InsyiraAppState> appKey = GlobalKey<_InsyiraAppState>();
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final prefs = await SharedPreferences.getInstance();
+  final isDarkMode = prefs.getBool('is_dark_mode') ?? true;
+
+  runApp(InsyiraApp(key: appKey, isDarkMode: isDarkMode));
 }
 
-class InsyiraApp extends StatelessWidget {
-  const InsyiraApp({super.key});
+class InsyiraApp extends StatefulWidget {
+  final bool isDarkMode;
+
+  const InsyiraApp({super.key, required this.isDarkMode});
+
+  @override
+  State<InsyiraApp> createState() => _InsyiraAppState();
+}
+
+class _InsyiraAppState extends State<InsyiraApp> {
+  late bool _isDarkMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _isDarkMode = widget.isDarkMode;
+  }
+
+  // Method untuk update theme - public
+  void updateTheme(bool isDark) {
+    setState(() {
+      _isDarkMode = isDark;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Insyira Muslim App',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF022C22),
-          surface: const Color(0xFF022C22),
-        ),
-        scaffoldBackgroundColor: const Color(
-          0xFF022C22,
-        ), // Deep Forest dari HTML
-
-        // ... (biarkan sisanya sama)
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: const SplashScreen(),
     );
   }

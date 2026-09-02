@@ -575,10 +575,24 @@ class _QuranScreenState extends State<QuranScreen> {
                   ),
                 ).then((_) => _loadLastRead()); // Auto-refresh saat kembali
               } else {
+                // SnackBar untuk "Belum ada ayat yang ditandai"
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Belum ada ayat yang ditandai 🔖'),
-                    backgroundColor: Color(0xFF904D00),
+                  SnackBar(
+                    content: const Text(
+                      'Belum ada ayat yang ditandai 🔖',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    backgroundColor: const Color(0xFF904D00),
+                    behavior: SnackBarBehavior.floating,
+                    margin: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).size.height - 200,
+                      left: 20,
+                      right: 20,
+                    ),
+                    duration: const Duration(seconds: 2),
                   ),
                 );
               }
