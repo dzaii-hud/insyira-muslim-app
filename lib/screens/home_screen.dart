@@ -433,17 +433,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _getBackgroundMap() {
     switch (_activePrayer.toLowerCase()) {
       case 'subuh':
-        return 'assets/images/bg_subuh.png';
+        return 'assets/images/bg_subuh.webp';
       case 'dzuhur':
-        return 'assets/images/bg_zuhur.png';
+        return 'assets/images/bg_zuhur.webp';
       case 'ashar':
-        return 'assets/images/bg_ashar.png';
+        return 'assets/images/bg_ashar.webp';
       case 'maghrib':
-        return 'assets/images/bg_maghrib.png';
+        return 'assets/images/bg_maghrib.webp';
       case 'isya':
-        return 'assets/images/bg_isya.png';
+        return 'assets/images/bg_isya.webp';
       default:
-        return 'assets/images/bg_zuhur.png';
+        return 'assets/images/bg_zuhur.webp';
     }
   }
 
@@ -1225,19 +1225,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // jendela — di browser lebarnya bisa berubah kapan saja (resize atau
     // memutar layar), beda dengan HP yang lebarnya tetap.
     return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints batas) =>
-          _buildScaffold(
-            context,
-            layarLebar: batas.maxWidth >= kBreakpointDesktop,
-          ),
+      builder: (BuildContext context, BoxConstraints batas) => _buildScaffold(
+        context,
+        layarLebar: batas.maxWidth >= kBreakpointDesktop,
+      ),
     );
   }
 
   /// Kerangka utama: AppBar + menu (samping di layar lebar, bawah di HP).
-  Widget _buildScaffold(
-    BuildContext context, {
-    required bool layarLebar,
-  }) {
+  Widget _buildScaffold(BuildContext context, {required bool layarLebar}) {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,

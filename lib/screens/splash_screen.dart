@@ -56,7 +56,7 @@ class _SplashScreenState extends State<SplashScreen> {
         fit: StackFit.expand,
         children: [
           // LAYER 1: Gambar Background Utuh
-          Image.asset('assets/images/splash_bg.png', fit: BoxFit.cover),
+          Image.asset('assets/images/splash_bg.webp', fit: BoxFit.cover),
 
           // LAYER 2: Animasi Loading Titik-Titik di Bawah
           const Positioned(
