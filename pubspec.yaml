@@ -25,11 +25,14 @@ dependencies:
   flutter_local_notifications: ^17.2.2
   timezone: ^0.9.4
   url_launcher: ^6.3.0
+  google_sign_in: ^6.2.1
+  sign_in_with_apple: ^6.1.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
@@ -37,6 +40,8 @@ flutter:
   assets:
     - assets/images/
     - assets/audios/
+    - assets/audios/dzikir/pagi/
+    - assets/audios/dzikir/sore/
     - assets/data/
     - assets/fonts/
     - assets/fonts/QCF/
@@ -46,3 +51,15 @@ flutter:
     - family: LPMQ
       fonts:
         - asset: assets/fonts/lpmq.ttf
+
+# 👇 KONFIGURASI IKON APLIKASI (ditaruh di paling bawah, sejajar dengan "flutter:")
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/images/logo_insyira.png"
+  min_sdk_android: 21
+  # Untuk Android 8.0+ (Adaptive Icon - bentuk bulat/kotak otomatis)
+  adaptive_icon_background: "#003527"     # Warna hijau tua Insyira
+  adaptive_icon_foreground: "assets/images/logo_insyira.png"
+  # Optional: hapus komentar di bawah kalau mau background gradien
+  # adaptive_icon_background: "assets/images/background_gradient.png"
