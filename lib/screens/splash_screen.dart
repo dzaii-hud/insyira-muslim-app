@@ -1,7 +1,11 @@
-import 'package:flutter/material.dart';
 import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
-import 'login_screen.dart'; // Pastikan path import ini sesuai
+
+import '../services/auth_service.dart';
+import 'home_screen.dart';
+import 'login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -11,16 +15,38 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  final AuthService _authService = AuthService();
+
   @override
   void initState() {
     super.initState();
-    // Timer 3 detik sebelum otomatis pindah ke Halaman Login
-    Future.delayed(const Duration(seconds: 3), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
-    });
+    _bootstrap();
+  }
+
+  /// Cek sesi tersimpan sambil menampilkan splash minimal 1,5 detik,
+  /// supaya user yang sudah pernah login langsung masuk Home (tidak perlu
+  /// login ulang setiap membuka aplikasi).
+  Future<void> _bootstrap() async {
+    final minimumSplash = Future<void>.delayed(
+      const Duration(milliseconds: 1500),
+    );
+
+    final sudahLogin = await _authService.isLoggedIn();
+    final sesiMasihValid = sudahLogin
+        ? await _authService.verifySession()
+        : false;
+
+    await minimumSplash;
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            sesiMasihValid ? const HomeScreen() : const LoginScreen(),
+      ),
+    );
   }
 
   @override
