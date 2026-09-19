@@ -1,12 +1,13 @@
 {
-    "name": "insyira_muslim_app",
-    "short_name": "insyira_muslim_app",
+    "name": "Insyira Muslim App",
+    "short_name": "Insyira",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#003527",
+    "theme_color": "#003527",
+    "description": "Jadwal sholat, arah kiblat, Al-Quran, dzikir harian, fawaidh asatidz, dan jadwal kajian dalam satu aplikasi.",
+    "lang": "id",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

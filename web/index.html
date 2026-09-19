@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
+
 <head>
   <!--
     If you are serving your web app in a path other than the root, change the
@@ -18,21 +19,87 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+
+  <meta name="description"
+    content="Insyira Muslim App — jadwal sholat, arah kiblat, Al-Quran, dzikir harian, fawaidh asatidz, dan jadwal kajian dalam satu aplikasi.">
+  <meta name="theme-color" content="#003527">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="insyira_muslim_app">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Insyira">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/png" href="favicon.png" />
 
-  <title>insyira_muslim_app</title>
+  <title>Insyira Muslim App</title>
   <link rel="manifest" href="manifest.json">
 </head>
+
 <body>
+  <!--
+    Tampilan loading awal supaya user tidak melihat halaman putih polos
+    sementara Flutter masih di-download. Otomatis tergantikan begitu
+    aplikasi selesai dimuat.
+  -->
+  <div id="insyira-splash" style="
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+      background: linear-gradient(160deg, #003527 0%, #00120B 100%);
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      z-index: 9999;
+      transition: opacity .3s ease;
+    ">
+    <div style="
+        width: 64px; height: 64px;
+        border-radius: 18px;
+        background: rgba(212, 175, 55, .14);
+        border: 1px solid rgba(212, 175, 55, .45);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 30px;
+      ">&#128332;</div>
+    <div style="text-align: center;">
+      <div style="font-size: 19px; font-weight: 700; letter-spacing: .3px; color: #FBBF24;">
+        Insyira Muslim App
+      </div>
+      <div style="font-size: 12.5px; color: #BEC9C2; margin-top: 6px;">
+        Memuat aplikasi&hellip;
+      </div>
+    </div>
+    <div style="
+        width: 26px; height: 26px;
+        border: 3px solid rgba(212, 175, 55, .25);
+        border-top-color: #D4AF37;
+        border-radius: 50%;
+        animation: insyira-spin .9s linear infinite;
+      "></div>
+    <style>
+      @keyframes insyira-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </div>
+
+  <script>
+    // Hilangkan splash begitu Flutter menggambar frame pertamanya.
+    window.addEventListener('flutter-first-frame', function () {
+      var splash = document.getElementById('insyira-splash');
+      if (!splash) return;
+      splash.style.opacity = '0';
+      setTimeout(function () { splash.remove(); }, 320);
+    });
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
+
 </html>

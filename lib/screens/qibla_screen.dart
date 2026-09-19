@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:geolocator/geolocator.dart';
@@ -6,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../theme/app_theme.dart'; // 👈 WAJIB IMPORT INI
 
 class QiblaScreen extends StatefulWidget {
   const QiblaScreen({super.key});
@@ -40,14 +42,21 @@ class _QiblaScreenState extends State<QiblaScreen> {
     super.initState();
     _initializeQibla();
 
-    // Listener tambahan KHUSUS untuk pergerakan AR
-    FlutterCompass.events?.listen((event) {
-      if (mounted) {
-        setState(() {
-          _heading = event.heading;
-        });
-      }
-    });
+    // Listener tambahan KHUSUS untuk pergerakan AR.
+    // Di web, FlutterCompass tidak punya implementasi sehingga stream-nya
+    // error; onError dipasang supaya errornya tidak jadi unhandled exception.
+    FlutterCompass.events?.listen(
+      (event) {
+        if (mounted) {
+          setState(() {
+            _heading = event.heading;
+          });
+        }
+      },
+      onError: (Object error) {
+        debugPrint('Sensor kompas tidak tersedia: $error');
+      },
+    );
   }
 
   @override
@@ -55,6 +64,53 @@ class _QiblaScreenState extends State<QiblaScreen> {
     // Wajib: Matikan kamera saat pindah halaman agar baterai tidak boros
     _cameraController?.dispose();
     super.dispose();
+  }
+
+  /// Pesan yang tampil ketika sensor kompas tidak bisa dipakai.
+  ///
+  /// Di browser, FlutterCompass memang tidak punya implementasi, jadi
+  /// pesannya dibedakan supaya user tidak bingung kenapa arah kiblat mati.
+  Widget _buildSensorUnavailable(BuildContext context, String fallbackText) {
+    final isWebBrowser = kIsWeb;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.explore_off_outlined,
+              size: 48,
+              color: AppColors.getGoldLeaf(context).withValues(alpha: 0.8),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              isWebBrowser ? 'Kompas tidak tersedia di browser' : fallbackText,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: AppColors.getTextPrimary(context),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isWebBrowser
+                  ? 'Fitur arah kiblat membutuhkan sensor kompas HP. '
+                        'Silakan buka lewat aplikasi Android/iOS.'
+                  : 'Perangkatmu belum mendukung sensor kompas.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.6,
+                color: AppColors.getOnSurfaceVariant(context),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // --- FUNGSI MENGHIDUPKAN/MEMATIKAN KAMERA AR ---
@@ -92,9 +148,9 @@ class _QiblaScreenState extends State<QiblaScreen> {
         debugPrint("Gagal menyalakan kamera: $e");
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Terjadi kesalahan saat membuka kamera'),
-              backgroundColor: Color(0xFF003D2D), // surface-variant
+            SnackBar(
+              content: const Text('Terjadi kesalahan saat membuka kamera'),
+              backgroundColor: AppColors.getSurfaceVariant(context),
             ),
           );
         }
@@ -102,9 +158,9 @@ class _QiblaScreenState extends State<QiblaScreen> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Izin kamera dibutuhkan untuk mode AR'),
-            backgroundColor: Color(0xFF003D2D),
+          SnackBar(
+            content: const Text('Izin kamera dibutuhkan untuk mode AR'),
+            backgroundColor: AppColors.getSurfaceVariant(context),
           ),
         );
       }
@@ -255,8 +311,9 @@ class _QiblaScreenState extends State<QiblaScreen> {
           Positioned.fill(child: CameraPreview(_cameraController!))
         else
           Positioned.fill(
-            child: Container(color: const Color(0xFF022C22)),
-          ), // deep-forest
+            // 👈 UBAH: Gunakan warna scaffold background dinamis
+            child: Container(color: Theme.of(context).scaffoldBackgroundColor),
+          ),
         // --- LAYER 2: KONTEN UI UTAMA ---
         Positioned.fill(
           child: _isCameraMode
@@ -265,37 +322,45 @@ class _QiblaScreenState extends State<QiblaScreen> {
         ),
 
         // --- LAYER 3: TOMBOL KAMERA AR (Pojok Kanan Atas) ---
-        Positioned(
-          top: 30,
-          right: 20,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            decoration: BoxDecoration(
-              color: _isCameraMode
-                  ? const Color(0xFFFBBF24)
-                  : const Color(0xFF002117), // gold-leaf vs surface-container
-              shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFF003D2D)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.4),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: IconButton(
-              tooltip: 'Mode Kamera AR',
-              icon: Icon(
-                _isCameraMode ? Icons.camera_alt : Icons.camera_alt_outlined,
+        // Disembunyikan di web karena sensor kompas tidak tersedia di browser,
+        // jadi overlay AR-nya tidak akan bisa menunjuk arah dengan benar.
+        if (!kIsWeb)
+          Positioned(
+            top: 30,
+            right: 20,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              decoration: BoxDecoration(
+                // 👈 UBAH: Gunakan warna dinamis
                 color: _isCameraMode
-                    ? const Color(0xFF00120B)
-                    : const Color(0xFF8BD6B6), // gelap vs primary
+                    ? AppColors.getGoldLeaf(context)
+                    : AppColors.getSurfaceContainerLow(context),
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.getSurfaceVariant(context)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(
+                      Theme.of(context).brightness == Brightness.dark
+                          ? 0.4
+                          : 0.1,
+                    ),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              onPressed: _toggleCameraMode,
+              child: IconButton(
+                tooltip: 'Mode Kamera AR',
+                icon: Icon(
+                  _isCameraMode ? Icons.camera_alt : Icons.camera_alt_outlined,
+                  color: _isCameraMode
+                      ? const Color(0xFF00120B)
+                      : AppColors.getPrimaryText(context), // 👈 UBAH
+                ),
+                onPressed: _toggleCameraMode,
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -309,12 +374,12 @@ class _QiblaScreenState extends State<QiblaScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 20.0),
         child: _isLoading
-            ? const SizedBox(
+            ? SizedBox(
                 height: 400,
                 child: Center(
                   child: CircularProgressIndicator(
-                    color: Color(0xFFFBBF24),
-                  ), // gold-leaf
+                    color: AppColors.getGoldLeaf(context), // 👈 UBAH
+                  ),
                 ),
               )
             : Column(
@@ -329,14 +394,20 @@ class _QiblaScreenState extends State<QiblaScreen> {
                       padding: const EdgeInsets.all(16),
                       margin: const EdgeInsets.symmetric(horizontal: 40),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF002117), // surface-container-low
+                        color: AppColors.getSurfaceContainerLow(
+                          context,
+                        ), // 👈 UBAH
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF003D2D)),
+                        border: Border.all(
+                          color: AppColors.getSurfaceVariant(context),
+                        ), // 👈 UBAH
                       ),
-                      child: const Text(
+                      child: Text(
                         "Silakan aktifkan GPS dan Izin Lokasi",
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white),
+                        style: TextStyle(
+                          color: AppColors.getTextPrimary(context),
+                        ), // 👈 UBAH
                       ),
                     ),
 
@@ -359,12 +430,12 @@ class _QiblaScreenState extends State<QiblaScreen> {
 
     return Column(
       children: [
-        const Text(
+        Text(
           'KIBLAT',
           style: TextStyle(
             fontSize: 12,
             letterSpacing: 3.0,
-            color: Color(0xFF8BD6B6), // primary-fixed-dim
+            color: AppColors.getPrimaryText(context), // 👈 UBAH
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -372,18 +443,18 @@ class _QiblaScreenState extends State<QiblaScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.location_on_outlined,
-              color: Color(0xFF8BD6B6),
+              color: AppColors.getPrimaryText(context), // 👈 UBAH
               size: 24,
             ),
             const SizedBox(width: 8),
             Text(
               _locationName,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: Colors.white, // Putih agar terang
+                color: AppColors.getTextPrimary(context), // 👈 UBAH
               ),
             ),
           ],
@@ -392,15 +463,15 @@ class _QiblaScreenState extends State<QiblaScreen> {
         RichText(
           text: TextSpan(
             text: 'Jarak ke Makkah: ',
-            style: const TextStyle(
-              color: Color(0xFFBEC9C2),
+            style: TextStyle(
+              color: AppColors.getOnSurfaceVariant(context), // 👈 UBAH
               fontSize: 14,
-            ), // on-surface-variant
+            ),
             children: [
               TextSpan(
                 text: '$distanceStr km',
-                style: const TextStyle(
-                  color: Color(0xFFFBBF24), // gold-leaf
+                style: TextStyle(
+                  color: AppColors.getGoldLeaf(context), // 👈 UBAH
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -417,15 +488,17 @@ class _QiblaScreenState extends State<QiblaScreen> {
         width: 320,
         height: 320,
         decoration: BoxDecoration(
-          color: const Color(0xFF002117), // surface-container-low
+          color: AppColors.getSurfaceContainerLow(context), // 👈 UBAH
           shape: BoxShape.circle,
           border: Border.all(
-            color: const Color(0xFF003D2D),
+            color: AppColors.getSurfaceVariant(context),
             width: 2,
-          ), // surface-variant
+          ), // 👈 UBAH
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.5),
+              color: Colors.black.withOpacity(
+                Theme.of(context).brightness == Brightness.dark ? 0.5 : 0.1,
+              ),
               blurRadius: 40,
               spreadRadius: 10,
               offset: const Offset(0, 10),
@@ -436,25 +509,20 @@ class _QiblaScreenState extends State<QiblaScreen> {
           stream: FlutterCompass.events,
           builder: (context, snapshot) {
             if (snapshot.hasError)
-              return const Center(
-                child: Text(
-                  'Sensor Error',
-                  style: TextStyle(color: Colors.white),
-                ),
-              );
+              return _buildSensorUnavailable(context, 'Sensor Error');
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: Color(0xFFFBBF24)),
+              return Center(
+                child: CircularProgressIndicator(
+                  color: AppColors.getGoldLeaf(context),
+                ), // 👈 UBAH
               );
             }
 
             double? deviceHeading = snapshot.data?.heading;
             if (deviceHeading == null)
-              return const Center(
-                child: Text(
-                  'Sensor Kompas Tidak Didukung',
-                  style: TextStyle(color: Colors.white),
-                ),
+              return _buildSensorUnavailable(
+                context,
+                'Sensor Kompas Tidak Didukung',
               );
 
             double compassRotationRad = -deviceHeading * (math.pi / 180);
@@ -474,7 +542,9 @@ class _QiblaScreenState extends State<QiblaScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: const Color(0xFF003D2D), // surface-variant
+                            color: AppColors.getSurfaceVariant(
+                              context,
+                            ), // 👈 UBAH
                             width: 1,
                           ),
                         ),
@@ -483,47 +553,53 @@ class _QiblaScreenState extends State<QiblaScreen> {
                       _buildRotatedSquare(math.pi / 6),
                       _buildRotatedSquare(math.pi / 3),
 
-                      const Positioned(
+                      Positioned(
                         top: 35,
                         child: Text(
                           'U',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
-                            color: Color(0xFFFBBF24), // gold-leaf
+                            color: AppColors.getGoldLeaf(context), // 👈 UBAH
                           ),
                         ),
                       ),
-                      const Positioned(
+                      Positioned(
                         bottom: 35,
                         child: Text(
                           'S',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
-                            color: Color(0xFFBEC9C2), // on-surface-variant
+                            color: AppColors.getOnSurfaceVariant(
+                              context,
+                            ), // 👈 UBAH
                           ),
                         ),
                       ),
-                      const Positioned(
+                      Positioned(
                         right: 35,
                         child: Text(
                           'T',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
-                            color: Color(0xFFBEC9C2),
+                            color: AppColors.getOnSurfaceVariant(
+                              context,
+                            ), // 👈 UBAH
                           ),
                         ),
                       ),
-                      const Positioned(
+                      Positioned(
                         left: 35,
                         child: Text(
                           'B',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
-                            color: Color(0xFFBEC9C2),
+                            color: AppColors.getOnSurfaceVariant(
+                              context,
+                            ), // 👈 UBAH
                           ),
                         ),
                       ),
@@ -537,26 +613,30 @@ class _QiblaScreenState extends State<QiblaScreen> {
                               width: 44,
                               height: 44,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF002117),
+                                color: AppColors.getSurfaceContainerLow(
+                                  context,
+                                ), // 👈 UBAH
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: const Color(
-                                    0xFFFBBF24,
-                                  ), // gold-leaf pointer
+                                  color: AppColors.getGoldLeaf(
+                                    context,
+                                  ), // 👈 UBAH
                                   width: 3,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(
-                                      0xFFFBBF24,
-                                    ).withOpacity(0.3),
+                                    color: AppColors.getGoldLeaf(
+                                      context,
+                                    ).withOpacity(0.3), // 👈 UBAH
                                     blurRadius: 15,
                                   ),
                                 ],
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.location_on,
-                                color: Color(0xFFFBBF24),
+                                color: AppColors.getGoldLeaf(
+                                  context,
+                                ), // 👈 UBAH
                                 size: 24,
                               ),
                             ),
@@ -564,12 +644,14 @@ class _QiblaScreenState extends State<QiblaScreen> {
                               width: 3,
                               height: 90,
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(
+                                gradient: LinearGradient(
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                   colors: [
-                                    Color(0xFFFBBF24), // gold-leaf
-                                    Color(0x00FBBF24), // transparan
+                                    AppColors.getGoldLeaf(context), // 👈 UBAH
+                                    AppColors.getGoldLeaf(
+                                      context,
+                                    ).withOpacity(0.0), // 👈 UBAH
                                   ],
                                 ),
                                 borderRadius: BorderRadius.circular(2),
@@ -586,12 +668,18 @@ class _QiblaScreenState extends State<QiblaScreen> {
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF002117),
+                    color: AppColors.getSurfaceContainerLow(context), // 👈 UBAH
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFF003D2D)),
+                    border: Border.all(
+                      color: AppColors.getSurfaceVariant(context),
+                    ), // 👈 UBAH
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.5),
+                        color: Colors.black.withOpacity(
+                          Theme.of(context).brightness == Brightness.dark
+                              ? 0.5
+                              : 0.1,
+                        ),
                         blurRadius: 10,
                       ),
                     ],
@@ -601,11 +689,13 @@ class _QiblaScreenState extends State<QiblaScreen> {
                       width: 10,
                       height: 10,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFBBF24), // gold-leaf
+                        color: AppColors.getGoldLeaf(context), // 👈 UBAH
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFFBBF24).withOpacity(0.5),
+                            color: AppColors.getGoldLeaf(
+                              context,
+                            ).withOpacity(0.5), // 👈 UBAH
                             blurRadius: 5,
                           ),
                         ],
@@ -629,9 +719,9 @@ class _QiblaScreenState extends State<QiblaScreen> {
         height: size,
         decoration: BoxDecoration(
           border: Border.all(
-            color: const Color(0xFF003D2D),
+            color: AppColors.getSurfaceVariant(context), // 👈 UBAH
             width: 1,
-          ), // surface-variant
+          ),
         ),
       ),
     );
@@ -641,12 +731,16 @@ class _QiblaScreenState extends State<QiblaScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
       decoration: BoxDecoration(
-        color: const Color(0xFF002117), // surface-container-low
+        color: AppColors.getSurfaceContainerLow(context), // 👈 UBAH
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF003D2D)), // surface-variant
+        border: Border.all(
+          color: AppColors.getSurfaceVariant(context),
+        ), // 👈 UBAH
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.4),
+            color: Colors.black.withOpacity(
+              Theme.of(context).brightness == Brightness.dark ? 0.4 : 0.1,
+            ),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -661,30 +755,30 @@ class _QiblaScreenState extends State<QiblaScreen> {
             children: [
               Text(
                 '${_qiblaDirection.toStringAsFixed(0)}°',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white, // Putih
+                  color: AppColors.getTextPrimary(context), // 👈 UBAH
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 _compassDirection,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFFFBBF24), // gold-leaf
+                  color: AppColors.getGoldLeaf(context), // 👈 UBAH
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'ARAH KIBLAT',
             style: TextStyle(
               fontSize: 10,
               letterSpacing: 2.5,
-              color: Color(0xFFBEC9C2), // on-surface-variant
+              color: AppColors.getOnSurfaceVariant(context), // 👈 UBAH
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -723,8 +817,10 @@ class _QiblaScreenState extends State<QiblaScreen> {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        const Color(0xFFFBBF24), // Gold Leaf Glow
-                        const Color(0xFFFBBF24).withOpacity(0.0),
+                        AppColors.getGoldLeaf(context), // 👈 UBAH
+                        AppColors.getGoldLeaf(
+                          context,
+                        ).withOpacity(0.0), // 👈 UBAH
                       ],
                     ),
                   ),
@@ -734,9 +830,7 @@ class _QiblaScreenState extends State<QiblaScreen> {
                       padding: EdgeInsets.only(top: 20),
                       child: Icon(
                         Icons.keyboard_double_arrow_up,
-                        color: Color(
-                          0xFF00120B,
-                        ), // Tanda panah gelap agar terlihat di atas jalur emas
+                        color: Color(0xFF00120B),
                         size: 50,
                       ),
                     ),
@@ -759,15 +853,17 @@ class _QiblaScreenState extends State<QiblaScreen> {
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFF002117).withOpacity(0.8), // Dark box
+                color: AppColors.getSurfaceContainerLow(
+                  context,
+                ).withOpacity(0.8), // 👈 UBAH
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: const Color(0xFFFBBF24),
-                ), // Gold border
+                  color: AppColors.getGoldLeaf(context), // 👈 UBAH
+                ),
               ),
               child: Icon(
                 diff < 0 ? Icons.arrow_back_ios_new : Icons.arrow_forward_ios,
-                color: const Color(0xFFFBBF24), // Gold icon
+                color: AppColors.getGoldLeaf(context), // 👈 UBAH
                 size: 40,
               ),
             ),
@@ -782,18 +878,18 @@ class _QiblaScreenState extends State<QiblaScreen> {
         Stack(
           alignment: Alignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.location_on,
               size: 120,
-              color: Color(0xFFFBBF24),
-            ), // Pin Gold
+              color: AppColors.getGoldLeaf(context), // 👈 UBAH
+            ),
             Positioned(
               top: 20,
               child: Container(
                 width: 35,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: Colors.black, // Ka'bah tetap hitam/emas
+                  color: Colors.black,
                   borderRadius: BorderRadius.circular(2),
                 ),
                 child: Column(
@@ -801,8 +897,8 @@ class _QiblaScreenState extends State<QiblaScreen> {
                     const SizedBox(height: 8),
                     Container(
                       height: 5,
-                      color: const Color(0xFFFBBF24),
-                    ), // Garis emas ka'bah
+                      color: AppColors.getGoldLeaf(context), // 👈 UBAH
+                    ),
                   ],
                 ),
               ),
@@ -812,19 +908,21 @@ class _QiblaScreenState extends State<QiblaScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: const Color(
-              0xFF002117,
-            ).withOpacity(0.9), // surface container
+            color: AppColors.getSurfaceContainerLow(
+              context,
+            ).withOpacity(0.9), // 👈 UBAH
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF003D2D)),
+            border: Border.all(
+              color: AppColors.getSurfaceVariant(context),
+            ), // 👈 UBAH
             boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 8)],
           ),
           child: Text(
             '${_distanceToMecca.toStringAsFixed(0)} km',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: AppColors.getTextPrimary(context), // 👈 UBAH
             ),
           ),
         ),
@@ -838,11 +936,20 @@ class _QiblaScreenState extends State<QiblaScreen> {
         width: 160,
         height: 160,
         decoration: BoxDecoration(
-          color: const Color(0xFF002117).withOpacity(0.85), // Dark transparan
+          color: AppColors.getSurfaceContainerLow(
+            context,
+          ).withOpacity(0.85), // 👈 UBAH
           shape: BoxShape.circle,
-          border: Border.all(color: const Color(0xFF003D2D)),
+          border: Border.all(
+            color: AppColors.getSurfaceVariant(context),
+          ), // 👈 UBAH
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10),
+            BoxShadow(
+              color: Colors.black.withOpacity(
+                Theme.of(context).brightness == Brightness.dark ? 0.5 : 0.1,
+              ),
+              blurRadius: 10,
+            ),
           ],
         ),
         child: StreamBuilder<CompassEvent>(
@@ -868,7 +975,9 @@ class _QiblaScreenState extends State<QiblaScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: const Color(0xFF003D2D),
+                            color: AppColors.getSurfaceVariant(
+                              context,
+                            ), // 👈 UBAH
                             width: 1,
                           ),
                         ),
@@ -877,47 +986,53 @@ class _QiblaScreenState extends State<QiblaScreen> {
                       _buildRotatedSquare(math.pi / 6, 120),
                       _buildRotatedSquare(math.pi / 3, 120),
 
-                      const Positioned(
+                      Positioned(
                         top: 10,
                         child: Text(
                           'U',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
-                            color: Color(0xFFFBBF24), // Gold
+                            color: AppColors.getGoldLeaf(context), // 👈 UBAH
                           ),
                         ),
                       ),
-                      const Positioned(
+                      Positioned(
                         bottom: 10,
                         child: Text(
                           'S',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 12,
-                            color: Color(0xFFBEC9C2),
+                            color: AppColors.getOnSurfaceVariant(
+                              context,
+                            ), // 👈 UBAH
                           ),
                         ),
                       ),
-                      const Positioned(
+                      Positioned(
                         right: 10,
                         child: Text(
                           'T',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 12,
-                            color: Color(0xFFBEC9C2),
+                            color: AppColors.getOnSurfaceVariant(
+                              context,
+                            ), // 👈 UBAH
                           ),
                         ),
                       ),
-                      const Positioned(
+                      Positioned(
                         left: 10,
                         child: Text(
                           'B',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 12,
-                            color: Color(0xFFBEC9C2),
+                            color: AppColors.getOnSurfaceVariant(
+                              context,
+                            ), // 👈 UBAH
                           ),
                         ),
                       ),
@@ -931,19 +1046,21 @@ class _QiblaScreenState extends State<QiblaScreen> {
                               width: 24,
                               height: 24,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF002117),
+                                color: AppColors.getSurfaceContainerLow(
+                                  context,
+                                ), // 👈 UBAH
                                 shape: BoxShape.circle,
                                 border: Border.all(
-                                  color: const Color(
-                                    0xFFFBBF24,
-                                  ), // Gold pointer
+                                  color: AppColors.getGoldLeaf(
+                                    context,
+                                  ), // 👈 UBAH
                                   width: 2,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(
-                                      0xFFFBBF24,
-                                    ).withOpacity(0.3),
+                                    color: AppColors.getGoldLeaf(
+                                      context,
+                                    ).withOpacity(0.3), // 👈 UBAH
                                     blurRadius: 5,
                                   ),
                                 ],
@@ -953,12 +1070,14 @@ class _QiblaScreenState extends State<QiblaScreen> {
                               width: 2,
                               height: 45,
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(
+                                gradient: LinearGradient(
                                   begin: Alignment.topCenter,
                                   end: Alignment.bottomCenter,
                                   colors: [
-                                    Color(0xFFFBBF24),
-                                    Color(0x00FBBF24),
+                                    AppColors.getGoldLeaf(context), // 👈 UBAH
+                                    AppColors.getGoldLeaf(
+                                      context,
+                                    ).withOpacity(0.0), // 👈 UBAH
                                   ],
                                 ),
                                 borderRadius: BorderRadius.circular(2),
@@ -975,12 +1094,18 @@ class _QiblaScreenState extends State<QiblaScreen> {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF002117),
+                    color: AppColors.getSurfaceContainerLow(context), // 👈 UBAH
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFF003D2D)),
+                    border: Border.all(
+                      color: AppColors.getSurfaceVariant(context),
+                    ), // 👈 UBAH
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.4),
+                        color: Colors.black.withOpacity(
+                          Theme.of(context).brightness == Brightness.dark
+                              ? 0.4
+                              : 0.1,
+                        ),
                         blurRadius: 5,
                       ),
                     ],
@@ -990,11 +1115,13 @@ class _QiblaScreenState extends State<QiblaScreen> {
                       width: 6,
                       height: 6,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFBBF24), // Gold center
+                        color: AppColors.getGoldLeaf(context), // 👈 UBAH
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFFBBF24).withOpacity(0.5),
+                            color: AppColors.getGoldLeaf(
+                              context,
+                            ).withOpacity(0.5), // 👈 UBAH
                             blurRadius: 3,
                           ),
                         ],
