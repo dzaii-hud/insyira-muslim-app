@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# File testing lokal — JANGAN di-commit, bisa memuat kredensial rahasia
+# (client secret API, token, dsb). Taruh kredensial di .env atau --dart-define.
+test-file/

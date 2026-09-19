@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import '../config.dart';
 
 class DetailSurahScreen extends StatefulWidget {
   final int nomorSurah;
@@ -48,11 +49,8 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
   int _currentPageIndex = 0;
 
   // --- [BARU] SERVICE & CACHE UNTUK MODE MUSHAF FONT QCF ---
-  final QuranFoundationApi _quranApi = QuranFoundationApi(
-    clientId: '97c651f5-6f20-44e6-941c-ae5c9f2296f1',
-    clientSecret:
-        'qfcs_a397381eee834fd7a4c23007e8b7a4a7f53c29790b3c42569d970af3c4e6cd6d',
-  );
+  // Menembak proxy backend Insyira; client_secret tidak ada di aplikasi lagi.
+  final MushafApi _mushafApi = MushafApi();
   final Map<int, MushafPageData> _pageDataCache = {};
   double _mushafFontSize = 30; // bisa diubah user lewat panel pengaturan
 
@@ -238,7 +236,7 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
   // lompat ke halaman yang sesuai posisi baca terakhir (bukan dari awal surah).
   Future<void> _loadAyahPageMapping() async {
     try {
-      final map = await _quranApi.fetchAyahPageMap(widget.nomorSurah);
+      final map = await _mushafApi.fetchAyahPageMap(widget.nomorSurah);
       if (!mounted) return;
       setState(() {
         _ayahToPageMap = map;
@@ -864,7 +862,7 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     // Font & data diambil paralel biar lebih cepat.
     final results = await Future.wait([
       QcfFontLoader.ensureLoaded(pageNumber),
-      _quranApi.fetchPageWords(pageNumber),
+      _mushafApi.fetchPageWords(pageNumber),
     ]);
     final words = results[1] as List<MushafWord>;
     final pageData = MushafPageData.fromWords(pageNumber, words);
@@ -1002,7 +1000,8 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                       Expanded(
                         child: Slider(
                           value: _mushafFontSize,
-                          min: 20,
+                          // ✅ min diturunkan supaya user bisa mengecilkan lebih jauh
+                          min: 10,
                           max: 44,
                           activeColor: const Color(0xFF003527),
                           onChanged: (value) {
@@ -1026,8 +1025,11 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
   // --- [BARU] Hitung ukuran font PALING PAS buat 1 halaman, biar semua
   // baris mushaf pasti muat dalam 1 baris (tidak ke-wrap otomatis oleh
   // Flutter, yang bikin ayat keliatan "kepotong" jadi 2 baris visual).
-  // Caranya: ukur lebar baris TERPANJANG di halaman itu pada ukuran font
-  // yang diinginkan user, lalu skalakan turun kalau kepanjangan.
+  //
+  // PERBAIKAN: ukur lebar baris terpanjang pada ukuran REFERENSI (30pt),
+  // bukan pada desiredFontSize. Kalau diukur pada desiredFontSize,
+  // rasio (maxWidth / widest) akan selalu menormalkan ke maxWidth,
+  // sehingga slider user tidak akan pernah terasa efeknya.
   double _computeFitFontSize({
     required List<String> lineTexts,
     required String fontFamily,
@@ -1036,12 +1038,13 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
   }) {
     if (lineTexts.isEmpty || maxWidth <= 0) return desiredFontSize;
 
+    const double referenceSize = 30.0;
     double widest = 0;
     for (final text in lineTexts) {
       final painter = TextPainter(
         text: TextSpan(
           text: text,
-          style: TextStyle(fontFamily: fontFamily, fontSize: desiredFontSize),
+          style: TextStyle(fontFamily: fontFamily, fontSize: referenceSize),
         ),
         textDirection: TextDirection.rtl,
         maxLines: 1,
@@ -1049,10 +1052,17 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
       if (painter.width > widest) widest = painter.width;
     }
 
-    if (widest <= maxWidth || widest == 0) return desiredFontSize;
+    if (widest == 0) return desiredFontSize;
 
-    final scale = (maxWidth / widest) * 0.98; // sedikit margin aman
-    return (desiredFontSize * scale).clamp(12.0, desiredFontSize);
+    // Ukuran font MAKSIMUM yang masih muat untuk baris terpanjang
+    // di halaman ini. Nilai ini FIXED per halaman, tidak terpengaruh
+    // oleh slider user.
+    final maxFitSize = (maxWidth / widest) * referenceSize * 0.98;
+
+    // Hormati pilihan user, tapi cap di maxFitSize supaya baris
+    // terpanjang tetap satu baris & layout mushaf tidak rusak.
+    if (desiredFontSize <= maxFitSize) return desiredFontSize;
+    return maxFitSize;
   }
 
   // --- [BARU] Render satu item halaman: bisa berupa header nama surah,
@@ -1150,7 +1160,9 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
           textDirection: TextDirection.rtl,
           child: PageView.builder(
             controller: _pageController,
-            reverse: true,
+            // ✅ FIX: 'reverse: true' DIHAPUS.
+            // Sekarang swipe ke KIRI = halaman berikutnya (sesuai arah
+            // baca mushaf Arab: dari kanan ke kiri).
             itemCount: 604,
             onPageChanged: (index) {
               setState(() {
@@ -1788,75 +1800,32 @@ const List<String> kSurahLatinNames = [
   'An-Nas',
 ];
 
-/// Komunikasi ke Quran Foundation Content API (penerus resmi api.quran.com).
-/// Dokumentasi: https://api-docs.quran.foundation
+/// Client mushaf yang menembak **PROXY backend Insyira**
+/// (`/api/quran/verses/...`), bukan langsung ke Quran Foundation.
 ///
-/// ‼️ CATATAN KEAMANAN: client_secret di sini HANYA untuk prototipe/dev.
-/// Untuk rilis produksi, pindahkan proses tukar token ke backend milikmu
-/// sendiri supaya client_secret tidak ikut ter-bundle di dalam APK/IPA
-/// (APK bisa di-decompile dan secret bisa dibaca orang lain).
-class QuranFoundationApi {
-  QuranFoundationApi({required this.clientId, required this.clientSecret});
-
-  final String clientId;
-  final String clientSecret;
-
-  static const _tokenUrl = 'https://oauth2.quran.foundation/oauth2/token';
-  static const _apiBase = 'https://apis.quran.foundation/content/api/v4';
+/// Alasan:
+///  - `client_secret` TIDAK lagi ikut ter-bundle di aplikasi (APK bisa
+///    di-decompile dan bundle web bisa dibaca dari source JS),
+///  - aplikasi web tetap bisa jalan, karena endpoint token Quran Foundation
+///    tidak mengirim header CORS sama sekali.
+///
+/// Bentuk respons dari proxy sengaja disamakan dengan API aslinya, jadi
+/// logika parsing di bawah tidak perlu diubah.
+class MushafApi {
   static const int _mushafIdQcfV2 = 1; // layout mushaf Madinah standar
 
-  String? _cachedToken;
-  DateTime? _tokenExpiry;
-
-  Future<String> _getAccessToken() async {
-    if (_cachedToken != null &&
-        _tokenExpiry != null &&
-        DateTime.now().isBefore(
-          _tokenExpiry!.subtract(const Duration(seconds: 30)),
-        )) {
-      return _cachedToken!;
-    }
-
-    final basicAuth = base64Encode(utf8.encode('$clientId:$clientSecret'));
-    final response = await http.post(
-      Uri.parse(_tokenUrl),
-      headers: {
-        'Authorization': 'Basic $basicAuth',
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: {'grant_type': 'client_credentials', 'scope': 'content'},
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception(
-        'Gagal ambil access token (${response.statusCode}): ${response.body}',
-      );
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    _cachedToken = data['access_token'] as String;
-    final expiresIn = data['expires_in'] as int? ?? 3600;
-    _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn));
-    return _cachedToken!;
-  }
+  String get _baseUrl => '${AppConfig.apiBaseUrl}/quran/verses';
 
   /// Ambil semua kata di satu halaman mushaf (1-604) lengkap dengan
   /// line_number (posisi baris) dan code_v2 (glyph font QCF).
   Future<List<MushafWord>> fetchPageWords(int pageNumber) async {
-    final token = await _getAccessToken();
-
-    final uri = Uri.parse('$_apiBase/verses/by_page/$pageNumber').replace(
-      queryParameters: {
-        'words': 'true',
-        'word_fields': 'code_v2,line_number,page_number',
-        'mushaf': '$_mushafIdQcfV2',
-        'per_page': '50',
-      },
-    );
+    final uri = Uri.parse(
+      '$_baseUrl/by_page/$pageNumber',
+    ).replace(queryParameters: {'mushaf': '$_mushafIdQcfV2'});
 
     final response = await http.get(
       uri,
-      headers: {'x-auth-token': token, 'x-client-id': clientId},
+      headers: {'Accept': 'application/json'},
     );
 
     if (response.statusCode != 200) {
@@ -1885,19 +1854,13 @@ class QuranFoundationApi {
   /// surah penuh. Ini cuma minta metadata dasar (bukan words/font), jadi
   /// cepat dan tidak kena batasan permission yang sama seperti fetchPageWords.
   Future<Map<int, int>> fetchAyahPageMap(int chapterNumber) async {
-    final token = await _getAccessToken();
-
-    final uri = Uri.parse('$_apiBase/verses/by_chapter/$chapterNumber').replace(
-      queryParameters: {
-        'fields': 'page_number',
-        'per_page': '300', // surah terpanjang (Al-Baqarah) = 286 ayat
-        'mushaf': '$_mushafIdQcfV2',
-      },
-    );
+    final uri = Uri.parse(
+      '$_baseUrl/by_chapter/$chapterNumber',
+    ).replace(queryParameters: {'mushaf': '$_mushafIdQcfV2'});
 
     final response = await http.get(
       uri,
-      headers: {'x-auth-token': token, 'x-client-id': clientId},
+      headers: {'Accept': 'application/json'},
     );
 
     if (response.statusCode != 200) {
