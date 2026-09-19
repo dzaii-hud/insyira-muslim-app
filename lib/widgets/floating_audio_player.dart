@@ -1,14 +1,15 @@
-import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class FloatingAudioPlayer extends StatefulWidget {
-  final String audioUrl; // Bisa berupa URL online atau path lokal
   final String title;
+  final String audioUrl;
 
   const FloatingAudioPlayer({
     super.key,
-    required this.audioUrl,
     required this.title,
+    required this.audioUrl,
   });
 
   @override
@@ -16,66 +17,114 @@ class FloatingAudioPlayer extends StatefulWidget {
 }
 
 class _FloatingAudioPlayerState extends State<FloatingAudioPlayer> {
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  bool _isPlaying = false;
+  final AudioPlayer _player = AudioPlayer();
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
+  bool _isPlaying = false;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
+    _setupAudio();
+  }
 
-    // Set sumber audio (contoh ini menggunakan URL, ganti ke AssetSource jika file lokal)
-    _audioPlayer.setSourceUrl(widget.audioUrl);
+  Source _resolveSource(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return UrlSource(path);
+    }
+    return AssetSource(path);
+  }
 
-    // Mendengarkan perubahan status audio (playing/paused/stopped)
-    _audioPlayer.onPlayerStateChanged.listen((state) {
-      setState(() {
-        _isPlaying = state == PlayerState.playing;
+  Future<void> _setupAudio() async {
+    try {
+      _player.onDurationChanged.listen((d) {
+        if (mounted) setState(() => _duration = d);
       });
-    });
-
-    // Mendengarkan durasi total audio
-    _audioPlayer.onDurationChanged.listen((newDuration) {
-      setState(() {
-        _duration = newDuration;
+      _player.onPositionChanged.listen((p) {
+        if (mounted) setState(() => _position = p);
       });
-    });
-
-    // Mendengarkan posisi audio saat ini diputar
-    _audioPlayer.onPositionChanged.listen((newPosition) {
-      setState(() {
-        _position = newPosition;
+      _player.onPlayerStateChanged.listen((state) {
+        if (mounted) {
+          setState(() => _isPlaying = state == PlayerState.playing);
+        }
       });
-    });
+      _player.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _isPlaying = false;
+            _position = Duration.zero;
+          });
+        }
+      });
+
+      await _player.setSource(_resolveSource(widget.audioUrl));
+      if (mounted) setState(() => _isLoading = false);
+
+      // 👇 AUTO-PLAY: langsung putar begitu sumber audio siap
+      await _player.resume();
+    } catch (e) {
+      debugPrint('Gagal load audio: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal memuat audio: $e'),
+            backgroundColor: Colors.red.shade800,
+          ),
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
+    // 👇 PENTING: dispose akan stop & lepas audio lama
+    _player.dispose();
     super.dispose();
   }
 
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return "$minutes:$seconds";
+  Future<void> _togglePlay() async {
+    if (_isPlaying) {
+      await _player.pause();
+    } else {
+      await _player.resume();
+    }
+  }
+
+  Future<void> _seekTo(Duration d) async {
+    await _player.seek(d);
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override
   Widget build(BuildContext context) {
+    final goldColor = AppColors.getGoldLeaf(context);
+    final primaryColor = AppColors.getPrimaryText(context);
+    final surfaceLow = AppColors.getSurfaceContainerLow(context);
+    final surfaceVariant = AppColors.getSurfaceVariant(context);
+    final textColor = AppColors.getTextPrimary(context);
+    final subTextColor = AppColors.getOnSurfaceVariant(context);
+
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(30),
+        color: surfaceLow,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: surfaceVariant),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.15),
+            color: Colors.black.withOpacity(
+              Theme.of(context).brightness == Brightness.dark ? 0.4 : 0.15,
+            ),
             blurRadius: 20,
-            offset: const Offset(0, 10),
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -84,75 +133,105 @@ class _FloatingAudioPlayerState extends State<FloatingAudioPlayer> {
         children: [
           Row(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(
-                    0xFF00B4D8,
-                  ).withOpacity(0.1), // Warna tema Insyira
-                  shape: BoxShape.circle,
-                ),
-                child: IconButton(
-                  icon: Icon(
-                    _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    color: const Color(0xFF00B4D8),
-                    size: 32,
-                  ),
-                  onPressed: () {
-                    if (_isPlaying) {
-                      _audioPlayer.pause();
-                    } else {
-                      _audioPlayer.resume();
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 16),
+              Icon(Icons.music_note, color: goldColor, size: 20),
+              const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "${_formatDuration(_position)} / ${_formatDuration(_duration)}",
-                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                    ),
-                  ],
+                child: Text(
+                  widget.title,
+                  style: TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          // Slider Progress
-          SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 4,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor: const Color(0xFF00B4D8),
-              inactiveTrackColor: Colors.grey[300],
-              thumbColor: const Color(0xFF00B4D8),
-            ),
-            child: Slider(
-              min: 0,
-              max: _duration.inSeconds.toDouble(),
-              value: _position.inSeconds.toDouble().clamp(
-                0.0,
-                _duration.inSeconds.toDouble(),
+          const SizedBox(height: 8),
+          if (_isLoading)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: goldColor,
+                ),
               ),
-              onChanged: (value) async {
-                final position = Duration(seconds: value.toInt());
-                await _audioPlayer.seek(position);
-              },
+            )
+          else ...[
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 2,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              ),
+              child: Slider(
+                value: _position.inMilliseconds.toDouble().clamp(
+                  0,
+                  _duration.inMilliseconds.toDouble(),
+                ),
+                min: 0,
+                max: _duration.inMilliseconds.toDouble() > 0
+                    ? _duration.inMilliseconds.toDouble()
+                    : 1,
+                activeColor: goldColor,
+                inactiveColor: surfaceVariant,
+                onChanged: (v) => _seekTo(Duration(milliseconds: v.toInt())),
+              ),
             ),
-          ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _fmt(_position),
+                    style: TextStyle(color: subTextColor, fontSize: 11),
+                  ),
+                  Text(
+                    _fmt(_duration),
+                    style: TextStyle(color: subTextColor, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: Icon(Icons.replay_10, color: primaryColor),
+                  onPressed: () =>
+                      _seekTo(_position - const Duration(seconds: 10)),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: goldColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    iconSize: 28,
+                    icon: Icon(
+                      _isPlaying ? Icons.pause : Icons.play_arrow,
+                      color: const Color(0xFF00120B),
+                    ),
+                    onPressed: _togglePlay,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(Icons.forward_10, color: primaryColor),
+                  onPressed: () =>
+                      _seekTo(_position + const Duration(seconds: 10)),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

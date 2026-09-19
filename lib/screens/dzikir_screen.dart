@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:insyira_muslim_app/widgets/floating_audio_player.dart';
+import '../theme/app_theme.dart';
+import '../services/notification_service.dart';
 
 class DzikirScreen extends StatefulWidget {
   const DzikirScreen({super.key});
@@ -11,26 +13,26 @@ class DzikirScreen extends StatefulWidget {
 }
 
 class _DzikirScreenState extends State<DzikirScreen> {
-  // State untuk mengontrol UI
-  bool _isPagi = true; // true = Pagi, false = Sore
-  double _arabFontSize = 26.0; // Ukuran font default
+  bool _isPagi = true;
+  double _arabFontSize = 26.0;
 
-  // State untuk Data
   List<dynamic> _dzikirList = [];
-  final Map<int, int> _counters = {}; // Menyimpan jumlah klik tasbih tiap item
+  final Map<int, int> _counters = {};
   bool _isLoading = true;
 
-  // --- State Baru: Mengontrol Audio Player ---
-  Map<String, dynamic>?
-  _activeAudio; // Menyimpan data dzikir yang sedang diputar
+  Map<String, dynamic>? _activeAudio;
+
+  // ===== STATUS PENYELESAIAN DZIKIR =====
+  final NotificationService _notificationService = NotificationService();
+  bool _completionNotified = false;
 
   @override
   void initState() {
     super.initState();
+    _notificationService.init();
     _loadDzikirData();
   }
 
-  // Fungsi membaca file JSON lokal
   Future<void> _loadDzikirData() async {
     try {
       final String response = await rootBundle.loadString('assets/dzikir.json');
@@ -38,9 +40,10 @@ class _DzikirScreenState extends State<DzikirScreen> {
 
       setState(() {
         _dzikirList = _isPagi ? data['pagi'] : data['sore'];
-        _counters.clear(); // Reset tasbih saat pindah waktu
+        _counters.clear();
         _isLoading = false;
-        _activeAudio = null; // Sembunyikan player jika pindah tab Pagi/Petang
+        _activeAudio = null;
+        _completionNotified = false;
       });
     } catch (e) {
       debugPrint("Gagal memuat JSON: $e");
@@ -48,7 +51,6 @@ class _DzikirScreenState extends State<DzikirScreen> {
     }
   }
 
-  // Fungsi ganti tab Pagi/Petang
   void _toggleWaktu(bool isPagi) {
     if (_isPagi != isPagi) {
       setState(() {
@@ -59,17 +61,14 @@ class _DzikirScreenState extends State<DzikirScreen> {
     }
   }
 
-  // Fungsi ubah ukuran font
   void _changeFontSize(double step) {
     setState(() {
       _arabFontSize += step;
-      // Batasi ukuran minimum dan maksimum
       if (_arabFontSize < 20.0) _arabFontSize = 20.0;
       if (_arabFontSize > 40.0) _arabFontSize = 40.0;
     });
   }
 
-  // Fungsi tasbih (counter)
   void _incrementCounter(int index, int target) {
     setState(() {
       int current = _counters[index] ?? 0;
@@ -77,15 +76,193 @@ class _DzikirScreenState extends State<DzikirScreen> {
         _counters[index] = current + 1;
       }
     });
+    // Cek apakah seluruh dzikir sudah selesai dibaca.
+    _checkDzikirCompletion();
+  }
+
+  // =====================================================================
+  // LOGIKA PENYELESAIAN DZIKIR
+  // =====================================================================
+
+  /// Jumlah bacaan yang sudah tuntas (counter >= target).
+  int get _completedCount {
+    int done = 0;
+    for (int i = 0; i < _dzikirList.length; i++) {
+      final int target = (_dzikirList[i]['target'] ?? 1) as int;
+      if ((_counters[i] ?? 0) >= target) done++;
+    }
+    return done;
+  }
+
+  bool get _isAllCompleted =>
+      _dzikirList.isNotEmpty && _completedCount == _dzikirList.length;
+
+  /// Dipanggil setiap kali user menekan tombol counter.
+  void _checkDzikirCompletion() {
+    if (_completionNotified) return;
+    if (!_isAllCompleted) return;
+
+    _completionNotified = true;
+
+    // 1. Kirim notifikasi ke sistem (muncul di notification bar HP)
+    _notificationService.showDzikirCompleted(isPagi: _isPagi);
+
+    // 2. Tampilkan perayaan di dalam aplikasi
+    _showDzikirCompletedDialog();
+  }
+
+  void _showDzikirCompletedDialog() {
+    if (!mounted) return;
+
+    final goldColor = AppColors.getGoldLeaf(context);
+    final waktu = _isPagi ? 'pagi' : 'sore';
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: AppColors.getSurfaceContainerLow(dialogContext),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: BorderSide(color: AppColors.getSurfaceVariant(dialogContext)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: goldColor.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: goldColor.withOpacity(0.4)),
+                  ),
+                  child: Icon(
+                    Icons.check_circle_rounded,
+                    color: goldColor,
+                    size: 44,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Alhamdulillah!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.getTextPrimary(dialogContext),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Kamu sudah menyelesaikan dzikir $waktu hari ini.\n'
+                  'Semoga Allah menerima amal ibadahmu. 🤲',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.6,
+                    color: AppColors.getOnSurfaceVariant(dialogContext),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: goldColor,
+                      foregroundColor: const Color(0xFF00120B),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text(
+                      'Tutup',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    setState(() {
+                      _counters.clear();
+                      _completionNotified = false;
+                    });
+                  },
+                  child: Text(
+                    'Ulangi dzikir $waktu',
+                    style: TextStyle(
+                      color: AppColors.getGoldLeaf(dialogContext),
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 👇 Helper cek apakah audio tersedia
+  bool _hasAudio(Map<String, dynamic> dzikir) {
+    final audio = dzikir['audio'];
+    return audio != null && audio.toString().trim().isNotEmpty;
+  }
+
+  // 👇 Handler tombol play
+  void _onPlayAudio(BuildContext context, Map<String, dynamic> dzikir) {
+    if (!_hasAudio(dzikir)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                color: AppColors.getGoldLeaf(context),
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Audio untuk dzikir ini belum tersedia',
+                  style: TextStyle(
+                    color: AppColors.getTextPrimary(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.getSurfaceContainerLow(context),
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.only(
+            bottom: MediaQuery.of(context).size.height - 200,
+            left: 20,
+            right: 20,
+          ),
+          duration: const Duration(seconds: 2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _activeAudio = dzikir;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // --- KONTEN UTAMA ---
         SingleChildScrollView(
-          // Padding bawah dibuat dinamis agar list terbawah tidak tertutup audio player
           padding: EdgeInsets.fromLTRB(
             20,
             10,
@@ -95,25 +272,29 @@ class _DzikirScreenState extends State<DzikirScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildHeader(),
+              _buildHeader(context),
               const SizedBox(height: 25),
-              _buildSelectionCards(),
+              _buildSelectionCards(context),
               const SizedBox(height: 30),
-              _buildControls(),
+              _buildControls(context),
               const SizedBox(height: 15),
 
-              // Render List Dzikir Dinamis
+              if (!_isLoading && _dzikirList.isNotEmpty) ...[
+                _buildProgressCard(context),
+                const SizedBox(height: 20),
+              ],
+
               if (_isLoading)
-                const Center(
+                Center(
                   child: CircularProgressIndicator(
-                    color: Color(0xFFFBBF24),
-                  ), // Gold
+                    color: AppColors.getGoldLeaf(context),
+                  ),
                 )
               else if (_dzikirList.isEmpty)
-                const Center(
+                Center(
                   child: Text(
                     "Data dzikir kosong",
-                    style: TextStyle(color: Colors.white),
+                    style: TextStyle(color: AppColors.getTextPrimary(context)),
                   ),
                 )
               else
@@ -124,14 +305,14 @@ class _DzikirScreenState extends State<DzikirScreen> {
                   separatorBuilder: (context, index) =>
                       const SizedBox(height: 20),
                   itemBuilder: (context, index) {
-                    return _buildDzikirCard(_dzikirList[index], index);
+                    return _buildDzikirCard(context, _dzikirList[index], index);
                   },
                 ),
             ],
           ),
         ),
 
-        // --- FLOATING AUDIO PLAYER (Dinamis) ---
+        // FLOATING AUDIO PLAYER
         if (_activeAudio != null)
           Positioned(
             bottom: 0,
@@ -141,7 +322,6 @@ class _DzikirScreenState extends State<DzikirScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Tombol (X) Close untuk menyembunyikan player
                 Padding(
                   padding: const EdgeInsets.only(right: 24.0, bottom: 4.0),
                   child: GestureDetector(
@@ -149,30 +329,37 @@ class _DzikirScreenState extends State<DzikirScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF002117), // surface-container-low
+                        color: AppColors.getSurfaceContainerLow(context),
                         shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFF003D2D)),
-                        boxShadow: const [
+                        border: Border.all(
+                          color: AppColors.getSurfaceVariant(context),
+                        ),
+                        boxShadow: [
                           BoxShadow(
-                            color: Colors.black45,
+                            color: Colors.black.withOpacity(
+                              Theme.of(context).brightness == Brightness.dark
+                                  ? 0.4
+                                  : 0.15,
+                            ),
                             blurRadius: 8,
-                            offset: Offset(0, 4),
+                            offset: const Offset(0, 4),
                           ),
                         ],
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.close,
                         size: 20,
-                        color: Color(0xFFBEC9C2), // on-surface-variant
+                        color: AppColors.getOnSurfaceVariant(context),
                       ),
                     ),
                   ),
                 ),
                 FloatingAudioPlayer(
+                  // 👇 KUNCI UTAMA: key unik per audio, supaya widget di-recreate
+                  // saat ganti audio → audio lama otomatis stop
+                  key: ValueKey(_activeAudio!['audio']),
                   title: _activeAudio!['judul'] ?? 'Audio Dzikir',
-                  audioUrl:
-                      _activeAudio!['audio'] ??
-                      'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+                  audioUrl: _activeAudio!['audio'] as String,
                 ),
               ],
             ),
@@ -181,8 +368,8 @@ class _DzikirScreenState extends State<DzikirScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    return const Column(
+  Widget _buildHeader(BuildContext context) {
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -190,29 +377,29 @@ class _DzikirScreenState extends State<DzikirScreen> {
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.bold,
-            color: Colors.white, // Putih agar kontras
+            color: AppColors.getTextPrimary(context),
           ),
         ),
-        SizedBox(height: 4),
+        const SizedBox(height: 4),
         Text(
           'Temukan ketenangan dalam mengingat Allah.',
           style: TextStyle(
             fontSize: 14,
-            color: Color(0xFFBEC9C2),
-          ), // on-surface-variant
+            color: AppColors.getOnSurfaceVariant(context),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildSelectionCards() {
+  Widget _buildSelectionCards(BuildContext context) {
     return Row(
       children: [
-        // TAB PAGI
         Expanded(
           child: GestureDetector(
             onTap: () => _toggleWaktu(true),
             child: _buildTabCard(
+              context,
               title: 'Pagi',
               subtitle: 'Dzikir Pagi',
               icon: Icons.wb_twilight,
@@ -221,11 +408,11 @@ class _DzikirScreenState extends State<DzikirScreen> {
           ),
         ),
         const SizedBox(width: 15),
-        // TAB PETANG
         Expanded(
           child: GestureDetector(
             onTap: () => _toggleWaktu(false),
             child: _buildTabCard(
+              context,
               title: 'Petang',
               subtitle: 'Dzikir Petang',
               icon: Icons.nights_stay_outlined,
@@ -237,27 +424,31 @@ class _DzikirScreenState extends State<DzikirScreen> {
     );
   }
 
-  Widget _buildTabCard({
+  Widget _buildTabCard(
+    BuildContext context, {
     required String title,
     required String subtitle,
     required IconData icon,
     required bool isActive,
   }) {
+    final goldColor = AppColors.getGoldLeaf(context);
+    final primaryColor = AppColors.getPrimaryText(context);
+    final surfaceVariant = AppColors.getSurfaceVariant(context);
+    final surfaceLow = AppColors.getSurfaceContainerLow(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 20),
       decoration: BoxDecoration(
-        color: isActive
-            ? const Color(0xFF003D2D)
-            : const Color(0xFF002117), // Active: Surface Variant, Inactive: Low
+        color: isActive ? surfaceVariant : surfaceLow,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isActive
-              ? const Color(0xFFFBBF24).withOpacity(0.5)
-              : const Color(0xFF003D2D),
+          color: isActive ? goldColor.withOpacity(0.5) : surfaceVariant,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
+            color: Colors.black.withOpacity(
+              Theme.of(context).brightness == Brightness.dark ? 0.3 : 0.08,
+            ),
             blurRadius: isActive ? 20 : 10,
             offset: const Offset(0, 6),
           ),
@@ -265,18 +456,12 @@ class _DzikirScreenState extends State<DzikirScreen> {
       ),
       child: Column(
         children: [
-          Icon(
-            icon,
-            color: isActive
-                ? const Color(0xFFFBBF24)
-                : const Color(0xFF8BD6B6), // Gold vs Primary
-            size: 32,
-          ),
+          Icon(icon, color: isActive ? goldColor : primaryColor, size: 32),
           const SizedBox(height: 12),
           Text(
             title,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: AppColors.getTextPrimary(context),
               fontSize: 18,
               fontWeight: FontWeight.bold,
             ),
@@ -286,8 +471,8 @@ class _DzikirScreenState extends State<DzikirScreen> {
             subtitle,
             style: TextStyle(
               color: isActive
-                  ? const Color(0xFFFBBF24)
-                  : const Color(0xFFBEC9C2),
+                  ? goldColor
+                  : AppColors.getOnSurfaceVariant(context),
               fontSize: 10,
             ),
           ),
@@ -296,21 +481,99 @@ class _DzikirScreenState extends State<DzikirScreen> {
     );
   }
 
-  Widget _buildControls() {
+  // ===== KARTU PROGRES DZIKIR =====
+  Widget _buildProgressCard(BuildContext context) {
+    final goldColor = AppColors.getGoldLeaf(context);
+    final primaryColor = AppColors.getPrimaryText(context);
+    final surfaceVariant = AppColors.getSurfaceVariant(context);
+    final textColor = AppColors.getTextPrimary(context);
+    final subTextColor = AppColors.getOnSurfaceVariant(context);
+
+    final total = _dzikirList.length;
+    final done = _completedCount;
+    final progress = total == 0 ? 0.0 : done / total;
+    final isDone = total > 0 && done == total;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.getSurfaceContainerLow(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDone ? goldColor.withOpacity(0.6) : surfaceVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isDone ? Icons.verified_rounded : Icons.track_changes_rounded,
+                size: 18,
+                color: isDone ? goldColor : primaryColor,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isDone
+                      ? 'Alhamdulillah, dzikir ${_isPagi ? 'pagi' : 'sore'} selesai!'
+                      : 'Progres dzikir ${_isPagi ? 'pagi' : 'sore'}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isDone ? goldColor : textColor,
+                  ),
+                ),
+              ),
+              Text(
+                '$done/$total',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: subTextColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 400),
+              tween: Tween<double>(begin: 0, end: progress),
+              builder: (context, value, _) => LinearProgressIndicator(
+                value: value,
+                minHeight: 8,
+                backgroundColor: surfaceVariant,
+                valueColor: AlwaysStoppedAnimation<Color>(goldColor),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildControls(BuildContext context) {
+    final surfaceVariant = AppColors.getSurfaceVariant(context);
+    final primaryColor = AppColors.getPrimaryText(context);
+    final textColor = AppColors.getTextPrimary(context);
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: const Color(0xFF003D2D), // surface-variant
+            color: surfaceVariant,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF8BD6B6).withOpacity(0.3)),
+            border: Border.all(color: primaryColor.withOpacity(0.3)),
           ),
           child: Text(
             '${_dzikirList.length} Bacaan',
-            style: const TextStyle(
-              color: Color(0xFF8BD6B6), // primary
+            style: TextStyle(
+              color: primaryColor,
               fontSize: 12,
               fontWeight: FontWeight.bold,
             ),
@@ -320,10 +583,10 @@ class _DzikirScreenState extends State<DzikirScreen> {
           children: [
             TextButton(
               onPressed: () => _changeFontSize(-2.0),
-              child: const Text(
+              child: Text(
                 'A-',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: textColor,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -331,10 +594,10 @@ class _DzikirScreenState extends State<DzikirScreen> {
             ),
             TextButton(
               onPressed: () => _changeFontSize(2.0),
-              child: const Text(
+              child: Text(
                 'A+',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: textColor,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -346,26 +609,37 @@ class _DzikirScreenState extends State<DzikirScreen> {
     );
   }
 
-  Widget _buildDzikirCard(Map<String, dynamic> dzikir, int index) {
+  Widget _buildDzikirCard(
+    BuildContext context,
+    Map<String, dynamic> dzikir,
+    int index,
+  ) {
     int target = dzikir['target'] ?? 1;
     int currentCount = _counters[index] ?? 0;
     bool isCompleted = currentCount >= target;
 
     bool isPlayingThis = _activeAudio != null && _activeAudio == dzikir;
+    final hasAudio = _hasAudio(dzikir); // 👈 cek audio
+
+    final goldColor = AppColors.getGoldLeaf(context);
+    final primaryColor = AppColors.getPrimaryText(context);
+    final surfaceVariant = AppColors.getSurfaceVariant(context);
+    final surfaceLow = AppColors.getSurfaceContainerLow(context);
+    final textColor = AppColors.getTextPrimary(context);
+    final subTextColor = AppColors.getOnSurfaceVariant(context);
+    final shadowOpacity = Theme.of(context).brightness == Brightness.dark
+        ? 0.4
+        : 0.1;
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFF002117), // surface-container-low
+        color: surfaceLow,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isCompleted
-              ? const Color(0xFFFBBF24)
-              : const Color(0xFF003D2D), // Gold border if complete
-        ),
+        border: Border.all(color: isCompleted ? goldColor : surfaceVariant),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.4),
+            color: Colors.black.withOpacity(shadowOpacity),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -379,24 +653,22 @@ class _DzikirScreenState extends State<DzikirScreen> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: const Color(
-                  0xFFFBBF24,
-                ).withOpacity(0.3), // Aksesn emas tipis
+                color: goldColor.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
           const SizedBox(height: 20),
 
-          // --- HEADER CARD ---
+          // HEADER CARD
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
                 child: Text(
                   dzikir['judul'],
-                  style: const TextStyle(
-                    color: Color(0xFFFBBF24), // Gold Leaf
+                  style: TextStyle(
+                    color: goldColor,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                     letterSpacing: 1.5,
@@ -406,41 +678,37 @@ class _DzikirScreenState extends State<DzikirScreen> {
               Row(
                 children: [
                   GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _activeAudio = dzikir;
-                      });
-                    },
+                    onTap: () => _onPlayAudio(context, dzikir),
                     child: Icon(
                       isPlayingThis
                           ? Icons.volume_up_rounded
-                          : Icons.play_circle_fill,
+                          : (hasAudio
+                                ? Icons.play_circle_fill
+                                : Icons.volume_off_rounded),
                       color: isPlayingThis
-                          ? const Color(0xFFFBBF24)
-                          : const Color(0xFF8BD6B6), // Gold vs Primary
+                          ? goldColor
+                          : (hasAudio
+                                ? primaryColor
+                                : subTextColor.withOpacity(0.5)),
                       size: 28,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Icon(
-                    Icons.bookmark_border,
-                    color: Color(0xFFBEC9C2), // on-surface-variant
-                    size: 24,
-                  ),
+                  Icon(Icons.bookmark_border, color: subTextColor, size: 24),
                 ],
               ),
             ],
           ),
           const SizedBox(height: 30),
 
-          // --- ARABIC TEXT ---
+          // ARABIC
           Text(
             dzikir['arab'],
             textAlign: TextAlign.right,
             style: TextStyle(
               fontSize: _arabFontSize,
               fontWeight: FontWeight.bold,
-              color: Colors.white, // Putih murni agar kontras
+              color: textColor,
               fontFamily: 'LPMQ',
               height: 2.2,
             ),
@@ -448,57 +716,45 @@ class _DzikirScreenState extends State<DzikirScreen> {
           ),
           const SizedBox(height: 30),
 
-          // --- LATIN TEXT ---
+          // LATIN
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF003D2D), // surface-variant
+              color: surfaceVariant,
               borderRadius: BorderRadius.circular(8),
-              border: const Border(
-                left: BorderSide(
-                  color: Color(0xFFFBBF24),
-                  width: 4,
-                ), // Gold line
-              ),
+              border: Border(left: BorderSide(color: goldColor, width: 4)),
             ),
             child: Text(
               dzikir['latin'],
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontStyle: FontStyle.italic,
-                color: Color(0xFFBEC9C2), // on-surface-variant
+                color: subTextColor,
               ),
             ),
           ),
           const SizedBox(height: 20),
 
-          // --- ARTI TEXT ---
+          // ARTI
           Text(
             dzikir['arti'],
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFFBEC9C2), // on-surface-variant
-              height: 1.5,
-            ),
+            style: TextStyle(fontSize: 14, color: subTextColor, height: 1.5),
           ),
           const SizedBox(height: 30),
-          const Divider(color: Color(0xFF003D2D)),
+          Divider(color: surfaceVariant),
           const SizedBox(height: 10),
 
-          // --- FOOTER & COUNTER TASBIH ---
+          // COUNTER
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
-                  const Icon(Icons.repeat, color: Color(0xFFBEC9C2), size: 16),
+                  Icon(Icons.repeat, color: subTextColor, size: 16),
                   const SizedBox(width: 8),
                   Text(
                     'Dibaca $target kali',
-                    style: const TextStyle(
-                      color: Color(0xFFBEC9C2),
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: subTextColor, fontSize: 12),
                   ),
                 ],
               ),
@@ -509,29 +765,25 @@ class _DzikirScreenState extends State<DzikirScreen> {
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: isCompleted
-                        ? const Color(0xFFFBBF24) // Gold
-                        : const Color(0xFF003D2D), // surface-variant
+                    color: isCompleted ? goldColor : surfaceVariant,
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: isCompleted
                           ? Colors.transparent
-                          : const Color(0xFF8BD6B6).withOpacity(0.5),
+                          : primaryColor.withOpacity(0.5),
                     ),
                   ),
                   child: Center(
                     child: isCompleted
                         ? const Icon(
                             Icons.check,
-                            color: Color(
-                              0xFF00120B,
-                            ), // Gelap (surface-lowest) agar kontras dengan Gold
+                            color: Color(0xFF00120B),
                             size: 24,
                           )
                         : Text(
                             currentCount.toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: textColor,
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),

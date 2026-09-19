@@ -353,31 +353,30 @@ class _QuranScreenState extends State<QuranScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 20),
         children: [
           const SizedBox(height: 10),
           _buildSearchBar(),
           if (_quickActions.isNotEmpty) _buildQuickActionsList(),
-          _buildLastRead(), // Kotak hijau akan otomatis pakai data asli
+          _buildLastRead(),
           _buildListHeader(),
 
-          Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF003527)),
-                  )
-                : _filteredSurahList.isEmpty
-                ? const Center(child: Text('Surah tidak ditemukan.'))
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    itemCount: _filteredSurahList.length,
-                    itemBuilder: (context, index) {
-                      final surah = _filteredSurahList[index];
-                      return _buildSurahItem(surah);
-                    },
-                  ),
-          ),
+          // Bagian daftar surah / loading / empty
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: CircularProgressIndicator(color: Color(0xFF003527)),
+              ),
+            )
+          else if (_filteredSurahList.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Center(child: Text('Surah tidak ditemukan.')),
+            )
+          else
+            ..._filteredSurahList.map((surah) => _buildSurahItem(surah)),
         ],
       ),
     );
@@ -396,6 +395,11 @@ class _QuranScreenState extends State<QuranScreen> {
         child: TextField(
           controller: _searchController,
           onChanged: _filterSurah,
+          style: const TextStyle(
+            color: Color(0xFF191C1D), // Teks gelap, kontras
+            fontSize: 14,
+          ),
+          cursorColor: const Color(0xFF003527),
           decoration: InputDecoration(
             hintText: 'Cari Surah, Halaman, atau "Ali Imran 50"...',
             hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 13),
