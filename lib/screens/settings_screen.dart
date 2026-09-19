@@ -1,11 +1,12 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../theme/app_theme.dart';
+import '../main.dart';
+import '../router/app_router.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
-import '../main.dart';
-import 'login_screen.dart';
+import '../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -106,10 +107,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!mounted) return;
     setState(() => _isLoggingOut = false);
 
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-      (route) => false,
-    );
+    // `go` mengganti seluruh riwayat, jadi setelah keluar user tidak bisa
+    // menekan Back untuk kembali ke halaman pengaturan.
+    context.go(AppRoutes.login);
   }
 
   @override
@@ -374,7 +374,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Icons.arrow_back,
             color: AppColors.getTextPrimary(context),
           ),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => popOrHome(context),
         ),
       ),
       body: ListView(
@@ -509,12 +509,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(
-                        builder: (context) => const LoginScreen(),
-                      ),
-                      (route) => false,
-                    ),
+                    onPressed: () => context.go(AppRoutes.login),
                     child: Text(
                       'Masuk',
                       style: TextStyle(

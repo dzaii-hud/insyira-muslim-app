@@ -4,8 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../config.dart';
+import '../router/app_router.dart';
 
 class DetailSurahScreen extends StatefulWidget {
   final int nomorSurah;
@@ -413,15 +415,9 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
         ),
       );
 
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (context, animation1, animation2) =>
-              DetailSurahScreen(nomorSurah: nomor),
-          transitionDuration: Duration.zero,
-          reverseTransitionDuration: Duration.zero,
-        ),
-      );
+      // `pushReplacement` menjaga riwayat tetap satu halaman, jadi berpindah
+      // surah berkali-kali tidak menumpuk banyak halaman di tombol Back.
+      context.pushReplacement(AppRoutes.surahDetail(nomorSurah: nomor));
     }
   }
 
@@ -442,7 +438,9 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                   color: Color(0xFF003527),
                   size: 20,
                 ),
-                onPressed: () => Navigator.pop(context),
+                // Kalau halaman dibuka langsung dari URL, tidak ada
+                // halaman sebelumnya — jadi diarahkan ke Home.
+                onPressed: () => popOrHome(context),
               ),
               title: Text(
                 _surahData != null ? _surahData!['namaLatin'] : 'Memuat...',

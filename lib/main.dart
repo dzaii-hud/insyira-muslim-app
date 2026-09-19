@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'screens/splash_screen.dart';
+import 'router/app_router.dart';
 import 'theme/app_theme.dart';
 
 // Global key untuk akses state dari mana saja
@@ -42,13 +42,16 @@ class _InsyiraAppState extends State<InsyiraApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    // MaterialApp.router + go_router: alamat di browser ikut berubah,
+    // tombol Back/Forward berfungsi wajar, dan halaman bisa di-refresh
+    // tanpa kembali ke splash.
+    return MaterialApp.router(
       title: 'Insyira Muslim App',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: const SplashScreen(),
+      routerConfig: appRouter,
     );
   }
 }

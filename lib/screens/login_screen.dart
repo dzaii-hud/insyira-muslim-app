@@ -2,10 +2,10 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:go_router/go_router.dart';
 import 'package:insyira_muslim_app/config.dart';
-import 'package:insyira_muslim_app/screens/home_screen.dart';
+import 'package:insyira_muslim_app/router/app_router.dart';
 import 'package:insyira_muslim_app/services/auth_service.dart';
-import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -171,17 +171,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _openRegisterScreen() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const RegisterScreen()),
-    );
+    // `push` menambah riwayat, jadi tombol Back kembali ke halaman login.
+    context.push(AppRoutes.register);
   }
 
   void _navigateToHome() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const HomeScreen()),
-    );
+    // `go` menimpa halaman login, bukan menumpuknya di riwayat.
+    context.go(AppRoutes.home);
   }
 
   void _showError(String message) {
@@ -473,14 +469,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: double.infinity,
                         height: 52,
                         child: OutlinedButton(
-                          onPressed: () {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const HomeScreen(),
-                              ),
-                            );
-                          },
+                          onPressed: () => context.go(AppRoutes.home),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFF003527),
                             side: const BorderSide(color: Color(0xFF003527)),

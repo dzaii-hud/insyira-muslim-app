@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../config.dart';
+import '../router/app_router.dart';
 import '../theme/app_theme.dart';
 
 class FawaidhScreen extends StatefulWidget {
@@ -133,7 +134,7 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
             color: AppColors.getPrimaryText(context),
             size: 20,
           ),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => popOrHome(context),
         ),
         title: Text(
           'Fawaidh Asatidz',

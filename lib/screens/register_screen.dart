@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../router/app_router.dart';
 import '../services/auth_service.dart';
-import 'home_screen.dart';
 
 /// Halaman pendaftaran akun baru (email + password).
 class RegisterScreen extends StatefulWidget {
@@ -64,10 +65,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       );
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      context.go(AppRoutes.home);
     } on AuthException catch (e) {
       if (!mounted) return;
       _showError(e.message);

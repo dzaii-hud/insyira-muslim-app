@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:go_router/go_router.dart';
 
+import '../router/app_router.dart';
 import '../services/auth_service.dart';
-import 'home_screen.dart';
-import 'login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -40,13 +40,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            sesiMasihValid ? const HomeScreen() : const LoginScreen(),
-      ),
-    );
+    // Tujuan awal ditentukan di sini (bukan di router) karena butuh
+    // membaca sesi tersimpan lalu memverifikasinya ke server.
+    // `go` menimpa alamat `/`, jadi tombol Back tidak balik ke splash.
+    context.go(sesiMasihValid ? AppRoutes.home : AppRoutes.login);
   }
 
   @override

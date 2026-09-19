@@ -4,22 +4,21 @@ import 'dart:convert';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:adhan/adhan.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
-import 'detail_surah_screen.dart';
 import 'quran_screen.dart';
 import 'qibla_screen.dart';
 import 'kajian_screen.dart';
 import 'dzikir_screen.dart';
-import 'settings_screen.dart';
 import '../config.dart';
+import '../router/app_router.dart';
 import '../theme/app_theme.dart';
 import '../services/notification_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/kajian_card_background.dart';
-import 'fawaidh_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -435,18 +434,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _openSettings() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const SettingsScreen()),
-    );
+    context.push(AppRoutes.settings);
   }
 
   // ===== Fawaidh dibuka sebagai layar baru (bukan tab lagi) =====
   void _openFawaidhScreen() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const FawaidhScreen()),
-    ).then((_) {
+    context.push(AppRoutes.fawaidh).then((_) {
       // Segarkan daftar fawaidh di home setelah user kembali.
       _loadFawaidhHome();
     });
@@ -2089,17 +2082,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               borderRadius: BorderRadius.circular(16),
               onTap: () {
                 if (hasBookmark) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => DetailSurahScreen(
-                        nomorSurah: freshNumber!,
-                        initialAyat: isMushaf ? null : freshAyat,
-                        initialMode: isMushaf ? 'mushaf' : null,
-                        initialMushafPage: isMushaf ? freshPage : null,
-                      ),
-                    ),
-                  ).then((_) => _loadLastRead());
+                  // Alamatnya ikut berubah jadi /surah/{nomor} sehingga bisa
+                  // dibagikan dan tahan refresh.
+                  context
+                      .push(
+                        AppRoutes.surahDetail(
+                          nomorSurah: freshNumber!,
+                          ayat: isMushaf ? null : freshAyat,
+                          mode: isMushaf ? 'mushaf' : null,
+                          mushafPage: isMushaf ? freshPage : null,
+                        ),
+                      )
+                      .then((_) => _loadLastRead());
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Memanggil halaman detail surah
-import 'detail_surah_screen.dart';
+import '../router/app_router.dart';
 
 // --- [BARU] Pemetaan halaman awal 114 Surah (Standar Mushaf Madinah) ---
 // Dipakai buat nentuin surah mana yang "punya" suatu nomor halaman, supaya
@@ -336,17 +336,16 @@ class _QuranScreenState extends State<QuranScreen> {
     String? initialMode,
     int? initialMushafPage,
   }) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => DetailSurahScreen(
-          nomorSurah: nomorSurah,
-          initialAyat: initialAyat,
-          initialMode: initialMode,
-          initialMushafPage: initialMushafPage,
-        ),
-      ),
-    ).then((_) => _loadLastRead());
+    context
+        .push(
+          AppRoutes.surahDetail(
+            nomorSurah: nomorSurah,
+            ayat: initialAyat,
+            mode: initialMode,
+            mushafPage: initialMushafPage,
+          ),
+        )
+        .then((_) => _loadLastRead());
   }
 
   @override
@@ -567,17 +566,16 @@ class _QuranScreenState extends State<QuranScreen> {
           InkWell(
             onTap: () {
               if (hasBookmark) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => DetailSurahScreen(
-                      nomorSurah: lastReadSurahNumber!,
-                      initialAyat: isMushaf ? null : lastReadAyat,
-                      initialMode: isMushaf ? 'mushaf' : null,
-                      initialMushafPage: isMushaf ? lastReadMushafPage : null,
-                    ),
-                  ),
-                ).then((_) => _loadLastRead()); // Auto-refresh saat kembali
+                context
+                    .push(
+                      AppRoutes.surahDetail(
+                        nomorSurah: lastReadSurahNumber!,
+                        ayat: isMushaf ? null : lastReadAyat,
+                        mode: isMushaf ? 'mushaf' : null,
+                        mushafPage: isMushaf ? lastReadMushafPage : null,
+                      ),
+                    )
+                    .then((_) => _loadLastRead()); // Auto-refresh saat kembali
               } else {
                 // SnackBar untuk "Belum ada ayat yang ditandai"
                 ScaffoldMessenger.of(context).showSnackBar(
