@@ -19,6 +19,26 @@ import '../theme/app_theme.dart';
 import '../services/notification_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/kajian_card_background.dart';
+import '../widgets/responsive_content.dart';
+
+/// Satu item menu navigasi utama.
+///
+/// Dipakai bersama oleh BottomNavigationBar (HP) dan NavigationRail
+/// (layar lebar), supaya keduanya tidak pernah beda urutan atau ikon.
+class NavDestination {
+  const NavDestination({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+}
+
+const List<NavDestination> kNavDestinations = <NavDestination>[
+  NavDestination(icon: Icons.home_filled, label: 'Home'),
+  NavDestination(icon: Icons.menu_book, label: 'Quran'),
+  NavDestination(icon: Icons.explore, label: 'Qibla'),
+  NavDestination(icon: Icons.calendar_month, label: 'Kajian'),
+  NavDestination(icon: Icons.auto_awesome, label: 'Dzikir'),
+];
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -1201,6 +1221,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // =====================================================================
   @override
   Widget build(BuildContext context) {
+    // LayoutBuilder dipakai supaya tata letak bisa menyesuaikan lebar
+    // jendela — di browser lebarnya bisa berubah kapan saja (resize atau
+    // memutar layar), beda dengan HP yang lebarnya tetap.
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints batas) =>
+          _buildScaffold(
+            context,
+            layarLebar: batas.maxWidth >= kBreakpointDesktop,
+          ),
+    );
+  }
+
+  /// Kerangka utama: AppBar + menu (samping di layar lebar, bawah di HP).
+  Widget _buildScaffold(
+    BuildContext context, {
+    required bool layarLebar,
+  }) {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -1210,16 +1247,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ).scaffoldBackgroundColor.withOpacity(0.95),
         elevation: 0,
         scrolledUnderElevation: 0,
-        leading: IconButton(
-          icon: Icon(
-            Icons.menu,
-            color: AppColors.getPrimaryText(context),
-            size: 28,
-          ),
-          onPressed: () {
-            _scaffoldKey.currentState?.openDrawer();
-          },
-        ),
+        automaticallyImplyLeading: false,
+        // Di layar lebar menu sudah pindah ke samping, jadi tombol
+        // hamburger tidak diperlukan lagi (drawer tetap bisa dibuka
+        // dengan geser dari tepi layar).
+        leading: layarLebar
+            ? null
+            : IconButton(
+                icon: Icon(
+                  Icons.menu,
+                  color: AppColors.getPrimaryText(context),
+                  size: 28,
+                ),
+                onPressed: () {
+                  _scaffoldKey.currentState?.openDrawer();
+                },
+              ),
         leadingWidth: 56,
         title: Text(
           'Insyira',
@@ -1344,63 +1387,118 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
       ),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
-        transitionBuilder: (Widget child, Animation<double> animation) {
-          return FadeTransition(
-            opacity: animation,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.0, 0.05),
-                end: Offset.zero,
-              ).animate(animation),
-              child: child,
-            ),
-          );
-        },
-        child: _buildBodyContent(),
+      body: Row(
+        children: [
+          // Menu samping khusus layar lebar.
+          if (layarLebar) _buildNavigationRail(context),
+          Expanded(child: _buildTabContent()),
+        ],
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.2),
-              blurRadius: 20,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          backgroundColor: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF00120B)
-              : Colors.white,
-          type: BottomNavigationBarType.fixed,
-          currentIndex: _selectedIndex,
-          onTap: _onItemTapped,
-          selectedItemColor: AppColors.getGoldLeaf(context),
-          unselectedItemColor: AppColors.getOnSurfaceVariant(context),
-          showUnselectedLabels: true,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home_filled),
-              label: 'Home',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.menu_book),
-              label: 'Quran',
-            ),
-            BottomNavigationBarItem(icon: Icon(Icons.explore), label: 'Qibla'),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.calendar_month),
-              label: 'Kajian',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.auto_awesome),
-              label: 'Dzikir',
-            ),
-          ],
+      // Di layar lebar menunya sudah ada di samping, jadi menu bawah
+      // dihilangkan supaya tidak dobel.
+      bottomNavigationBar: layarLebar ? null : _buildBottomNav(context),
+    );
+  }
+
+  /// Isi tab — dibatasi lebarnya supaya tidak melar di monitor lebar.
+  ///
+  /// Catatan: `_buildBodyContent()` HARUS tetap menjadi anak langsung
+  /// dari AnimatedSwitcher, karena kunci (ValueKey) di dalamnya yang
+  /// membuat animasi perpindahan tab jalan.
+  Widget _buildTabContent() {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: kMaxContentWidth),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          transitionBuilder: (Widget child, Animation<double> animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0.0, 0.05),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            );
+          },
+          child: _buildBodyContent(),
         ),
       ),
+    );
+  }
+
+  /// Menu bawah untuk HP.
+  Widget _buildBottomNav(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: BottomNavigationBar(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF00120B)
+            : Colors.white,
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        selectedItemColor: AppColors.getGoldLeaf(context),
+        unselectedItemColor: AppColors.getOnSurfaceVariant(context),
+        showUnselectedLabels: true,
+        items: <BottomNavigationBarItem>[
+          for (final NavDestination tujuan in kNavDestinations)
+            BottomNavigationBarItem(
+              icon: Icon(tujuan.icon),
+              label: tujuan.label,
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Menu samping untuk layar lebar (desktop / tablet lanskap).
+  Widget _buildNavigationRail(BuildContext context) {
+    return NavigationRail(
+      selectedIndex: _selectedIndex,
+      onDestinationSelected: _onItemTapped,
+      labelType: NavigationRailLabelType.all,
+      backgroundColor: AppColors.getSurfaceContainerLow(context),
+      selectedIconTheme: IconThemeData(color: AppColors.getGoldLeaf(context)),
+      selectedLabelTextStyle: TextStyle(
+        color: AppColors.getGoldLeaf(context),
+        fontWeight: FontWeight.bold,
+      ),
+      unselectedIconTheme: IconThemeData(
+        color: AppColors.getOnSurfaceVariant(context),
+      ),
+      unselectedLabelTextStyle: TextStyle(
+        color: AppColors.getOnSurfaceVariant(context),
+      ),
+      // Di layar lebar drawer tidak dipakai, jadi Pengaturan dipindah
+      // ke bawah rail supaya tetap terjangkau.
+      trailing: IconButton(
+        tooltip: 'Pengaturan',
+        icon: Icon(
+          Icons.settings_outlined,
+          color: AppColors.getOnSurfaceVariant(context),
+        ),
+        onPressed: _openSettings,
+      ),
+      destinations: <NavigationRailDestination>[
+        for (final NavDestination tujuan in kNavDestinations)
+          NavigationRailDestination(
+            icon: Icon(tujuan.icon),
+            selectedIcon: Icon(tujuan.icon),
+            label: Text(tujuan.label),
+          ),
+      ],
     );
   }
 

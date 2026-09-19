@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../config.dart';
 import '../router/app_router.dart';
+import '../widgets/responsive_content.dart';
 
 class DetailSurahScreen extends StatefulWidget {
   final int nomorSurah;
@@ -489,7 +490,7 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                         )
                       : _surahData == null
                       ? const Center(child: Text('Gagal memuat data.'))
-                      : _buildTranslationView(),
+                      : ResponsiveContent(child: _buildTranslationView()),
                 ),
               ),
       ),

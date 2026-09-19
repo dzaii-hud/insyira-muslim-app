@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../config.dart';
 import '../router/app_router.dart';
 import '../theme/app_theme.dart';
+import '../widgets/responsive_content.dart';
 
 class FawaidhScreen extends StatefulWidget {
   const FawaidhScreen({super.key});
@@ -145,11 +146,13 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
           ),
         ),
       ),
-      body: RefreshIndicator(
-        color: AppColors.getGoldLeaf(context),
-        backgroundColor: AppColors.getSurfaceContainerLow(context),
-        onRefresh: _fetchFawaidh,
-        child: _buildBody(context),
+      body: ResponsiveContent(
+        child: RefreshIndicator(
+          color: AppColors.getGoldLeaf(context),
+          backgroundColor: AppColors.getSurfaceContainerLow(context),
+          onRefresh: _fetchFawaidh,
+          child: _buildBody(context),
+        ),
       ),
     );
   }
