@@ -5,6 +5,7 @@ import 'dart:convert';
 import '../config.dart';
 import '../router/app_router.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_shell.dart';
 import '../widgets/responsive_content.dart';
 
 class FawaidhScreen extends StatefulWidget {
@@ -123,6 +124,20 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // LayoutBuilder dipakai supaya di layar lebar sidebarnya tetap tampil
+    // seperti aplikasi desktop, tanpa mengubah tampilan di HP.
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints batas) {
+        if (batas.maxWidth < kBreakpointDesktop) {
+          return _buildHp(context);
+        }
+        return DesktopSidebarFrame(child: _buildHp(context));
+      },
+    );
+  }
+
+  /// Halaman versi HP — bentuk lama, sengaja tidak diubah.
+  Widget _buildHp(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(

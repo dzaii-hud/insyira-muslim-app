@@ -7,6 +7,7 @@ import '../router/app_router.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_shell.dart';
 import '../widgets/responsive_content.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -364,6 +365,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // LayoutBuilder dipakai supaya di layar lebar sidebarnya tetap tampil
+    // seperti aplikasi desktop, tanpa mengubah tampilan di HP.
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints batas) {
+        if (batas.maxWidth < kBreakpointDesktop) {
+          return _buildHp(context);
+        }
+        return DesktopSidebarFrame(child: _buildHp(context));
+      },
+    );
+  }
+
+  /// Halaman versi HP — bentuk lama, sengaja tidak diubah.
+  Widget _buildHp(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(

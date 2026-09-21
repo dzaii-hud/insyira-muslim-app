@@ -93,8 +93,11 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.home,
       name: 'home',
-      builder: (BuildContext context, GoRouterState state) =>
-          const HomeScreen(),
+      builder: (BuildContext context, GoRouterState state) => HomeScreen(
+        // Tab awal boleh ditentukan dari URL, mis. `/#/home?tab=3`.
+        // Nilai yang tidak sah ditangani di dalam HomeScreen.
+        initialTab: int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+      ),
     ),
     GoRoute(
       path: AppRoutes.fawaidh,

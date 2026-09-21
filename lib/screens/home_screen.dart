@@ -19,6 +19,7 @@ import '../theme/app_theme.dart';
 import '../services/notification_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/kajian_card_background.dart';
+import '../widgets/app_shell.dart';
 import '../widgets/responsive_content.dart';
 
 /// Satu item menu navigasi utama.
@@ -40,8 +41,20 @@ const List<NavDestination> kNavDestinations = <NavDestination>[
   NavDestination(icon: Icons.auto_awesome, label: 'Dzikir'),
 ];
 
+/// Lebar sidebar pada layar lebar.
+///
+/// 250 px cukup untuk memuat label menu terpanjang tanpa terpotong,
+/// dan masih menyisakan ruang lega untuk isi halaman.
+const double kLebarSidebar = 250;
+
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.initialTab = 0});
+
+  /// Tab yang dibuka pertama kali.
+  ///
+  /// Di web nilainya bisa datang dari URL, mis. `/#/home?tab=2`,
+  /// supaya satu tab bisa dibagikan lewat tautan langsung.
+  final int initialTab;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -49,7 +62,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  int _selectedIndex = 0;
+
+  /// Tab yang sedang dibuka. Diisi di [initState] karena nilainya bisa
+  /// datang dari URL (lihat [HomeScreen.initialTab]).
+  late int _selectedIndex;
+
   final NotificationService _notificationService = NotificationService();
 
   // --- VARIABEL DATA ASLI (JADWAL SHOLAT & GPS) ---
@@ -88,6 +105,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    // Dijepit ke rentang yang sah supaya URL yang salah (mis. `?tab=99`)
+    // tidak membuat aplikasi error.
+    _selectedIndex = widget.initialTab.clamp(0, kNavDestinations.length - 1);
     WidgetsBinding.instance.addObserver(this);
     _notificationService.init();
     _getLocationAndPrayerTimes();
@@ -1234,6 +1254,68 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Kerangka utama: AppBar + menu (samping di layar lebar, bawah di HP).
   Widget _buildScaffold(BuildContext context, {required bool layarLebar}) {
+    return layarLebar
+        ? _buildScaffoldLayarLebar(context)
+        : _buildScaffoldHp(context);
+  }
+
+  /// Kerangka untuk layar lebar.
+  ///
+  /// Dipakai bentuk aplikasi desktop: sidebar sendiri di kiri (memuat nama
+  /// aplikasi + menu), dan bilah judul di atas isi. AppBar bawaan tidak
+  /// dipakai karena nama aplikasi sudah ada di sidebar — kalau keduanya
+  /// dipakai, namanya tampil dobel.
+  Widget _buildScaffoldLayarLebar(BuildContext context) {
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: Row(
+        children: <Widget>[
+          AppSidebar(selectedIndex: _selectedIndex, onPilihTab: _onItemTapped),
+          Expanded(
+            child: Column(
+              children: <Widget>[
+                DesktopTopBar(
+                  judul: kNavDestinations[_selectedIndex].label,
+                  aksi: <Widget>[
+                    IconButton(
+                      tooltip: 'Notifikasi',
+                      icon: Icon(
+                        Icons.notifications_none,
+                        color: AppColors.getPrimaryText(context),
+                        size: 26,
+                      ),
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text(
+                              'Tidak ada notifikasi baru',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            backgroundColor: const Color(0xFF003527),
+                            behavior: SnackBarBehavior.floating,
+                            margin: const EdgeInsets.all(20),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                Expanded(child: _buildTabContent()),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Kerangka untuk HP — bentuk lama, sengaja tidak diubah.
+  Widget _buildScaffoldHp(BuildContext context) {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -1244,21 +1326,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         elevation: 0,
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
-        // Di layar lebar menu sudah pindah ke samping, jadi tombol
-        // hamburger tidak diperlukan lagi (drawer tetap bisa dibuka
-        // dengan geser dari tepi layar).
-        leading: layarLebar
-            ? null
-            : IconButton(
-                icon: Icon(
-                  Icons.menu,
-                  color: AppColors.getPrimaryText(context),
-                  size: 28,
-                ),
-                onPressed: () {
-                  _scaffoldKey.currentState?.openDrawer();
-                },
-              ),
+        leading: IconButton(
+          icon: Icon(
+            Icons.menu,
+            color: AppColors.getPrimaryText(context),
+            size: 28,
+          ),
+          onPressed: () {
+            _scaffoldKey.currentState?.openDrawer();
+          },
+        ),
         leadingWidth: 56,
         title: Text(
           'Insyira',
@@ -1383,16 +1460,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ],
         ),
       ),
-      body: Row(
-        children: [
-          // Menu samping khusus layar lebar.
-          if (layarLebar) _buildNavigationRail(context),
-          Expanded(child: _buildTabContent()),
-        ],
-      ),
-      // Di layar lebar menunya sudah ada di samping, jadi menu bawah
-      // dihilangkan supaya tidak dobel.
-      bottomNavigationBar: layarLebar ? null : _buildBottomNav(context),
+      body: _buildTabContent(),
+      bottomNavigationBar: _buildBottomNav(context),
     );
   }
 
@@ -1456,45 +1525,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
         ],
       ),
-    );
-  }
-
-  /// Menu samping untuk layar lebar (desktop / tablet lanskap).
-  Widget _buildNavigationRail(BuildContext context) {
-    return NavigationRail(
-      selectedIndex: _selectedIndex,
-      onDestinationSelected: _onItemTapped,
-      labelType: NavigationRailLabelType.all,
-      backgroundColor: AppColors.getSurfaceContainerLow(context),
-      selectedIconTheme: IconThemeData(color: AppColors.getGoldLeaf(context)),
-      selectedLabelTextStyle: TextStyle(
-        color: AppColors.getGoldLeaf(context),
-        fontWeight: FontWeight.bold,
-      ),
-      unselectedIconTheme: IconThemeData(
-        color: AppColors.getOnSurfaceVariant(context),
-      ),
-      unselectedLabelTextStyle: TextStyle(
-        color: AppColors.getOnSurfaceVariant(context),
-      ),
-      // Di layar lebar drawer tidak dipakai, jadi Pengaturan dipindah
-      // ke bawah rail supaya tetap terjangkau.
-      trailing: IconButton(
-        tooltip: 'Pengaturan',
-        icon: Icon(
-          Icons.settings_outlined,
-          color: AppColors.getOnSurfaceVariant(context),
-        ),
-        onPressed: _openSettings,
-      ),
-      destinations: <NavigationRailDestination>[
-        for (final NavDestination tujuan in kNavDestinations)
-          NavigationRailDestination(
-            icon: Icon(tujuan.icon),
-            selectedIcon: Icon(tujuan.icon),
-            label: Text(tujuan.label),
-          ),
-      ],
     );
   }
 
