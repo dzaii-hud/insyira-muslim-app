@@ -1791,48 +1791,44 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   // --- MENU GRID (4 BUTTON) ---
   Widget _buildMenuGrid() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildMenuItem(
-                Icons.menu_book,
-                'Al-Quran',
-                () => _onItemTapped(1),
+    final List<Widget> menu = <Widget>[
+      _buildMenuItem(Icons.menu_book, 'Al-Quran', () => _onItemTapped(1)),
+      _buildMenuItem(Icons.explore, 'Qibla', () => _onItemTapped(2)),
+      _buildMenuItem(Icons.event_note, 'Kajian', () => _onItemTapped(3)),
+      _buildMenuItem(Icons.auto_awesome, 'Dhikr', () => _onItemTapped(4)),
+    ];
+
+    // Jumlah kolom mengikuti lebar yang tersedia. Di HP dua kolom sudah
+    // pas, tapi di laptop dua kotak selebar itu hanya berisi satu ikon
+    // kecil sehingga terlihat kosong — di sana dipakai empat kolom.
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints batas) {
+        const double jarak = 15;
+        final int kolom = batas.maxWidth >= 700 ? 4 : 2;
+
+        return Column(
+          children: <Widget>[
+            for (int mulai = 0; mulai < menu.length; mulai += kolom)
+              Padding(
+                padding: EdgeInsets.only(top: mulai == 0 ? 0 : jarak),
+                child: Row(
+                  children: <Widget>[
+                    for (int i = mulai; i < mulai + kolom; i++) ...<Widget>[
+                      if (i > mulai) const SizedBox(width: jarak),
+                      // Slot kosong pada baris terakhir dibiarkan
+                      // transparan supaya lebarnya tetap sejajar.
+                      Expanded(
+                        child: i < menu.length
+                            ? menu[i]
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 15),
-            Expanded(
-              child: _buildMenuItem(
-                Icons.explore,
-                'Qibla',
-                () => _onItemTapped(2),
-              ),
-            ),
           ],
-        ),
-        const SizedBox(height: 15),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMenuItem(
-                Icons.event_note,
-                'Kajian',
-                () => _onItemTapped(3),
-              ),
-            ),
-            const SizedBox(width: 15),
-            Expanded(
-              child: _buildMenuItem(
-                Icons.auto_awesome,
-                'Dhikr',
-                () => _onItemTapped(4),
-              ),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
     );
   }
 

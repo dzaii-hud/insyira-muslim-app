@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -6,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:insyira_muslim_app/config.dart';
 import 'package:insyira_muslim_app/router/app_router.dart';
 import 'package:insyira_muslim_app/services/auth_service.dart';
+import 'package:insyira_muslim_app/widgets/responsive_content.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -209,6 +212,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // LayoutBuilder dipakai supaya tata letak bisa menyesuaikan lebar
+    // jendela — di browser lebarnya bisa berubah kapan saja (resize),
+    // beda dengan HP yang lebarnya tetap.
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints batas) {
+        return batas.maxWidth >= kBreakpointDesktop
+            ? _buildLayoutLayarLebar(context)
+            : _buildLayoutHp(context);
+      },
+    );
+  }
+
+  /// Tata letak HP: gambar di bagian atas, kartu putih berisi formulir
+  /// di bawahnya.
+  ///
+  /// Bentuk ini sengaja dibiarkan apa adanya supaya tampilan di HP tidak
+  /// ikut berubah saat versi web diperbaiki.
+  Widget _buildLayoutHp(BuildContext context) {
     // Mengambil tinggi layar HP
     final screenHeight = MediaQuery.of(context).size.height;
 
@@ -265,302 +286,375 @@ class _LoginScreenState extends State<LoginScreen> {
                   horizontal: 24.0,
                   vertical: 32.0,
                 ),
-                child: Form(
-                  key: _formKey,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Selamat Datang di Insyira Muslim App',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF003527),
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Masuk untuk melanjutkan ibadah Anda.',
-                        style: TextStyle(fontSize: 15, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 32),
+                child: _buildForm(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                      const Text(
-                        'Email',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black54,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        textInputAction: TextInputAction.next,
-                        autocorrect: false,
-                        validator: (value) {
-                          final v = value?.trim() ?? '';
-                          if (v.isEmpty) return 'Email wajib diisi';
-                          final emailRegex = RegExp(
-                            r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-                          );
-                          if (!emailRegex.hasMatch(v)) {
-                            return 'Format email belum benar';
-                          }
-                          return null;
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Masukkan email',
-                          hintStyle: const TextStyle(
-                            color: Colors.black38,
-                            fontSize: 14,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.mail_outline,
-                            color: Colors.black45,
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF3F4F5),
-                          errorStyle: const TextStyle(fontSize: 12),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
+  /// Tata letak layar lebar (laptop / desktop).
+  ///
+  /// Dibuat dua kolom: panel gambar di kiri, formulir di kanan dengan
+  /// lebar terbatas.
+  ///
+  /// Sebelumnya formulir ikut dipaksa selebar jendela. Di laptop akibatnya
+  /// kolom isian menjadi sangat panjang, gambarnya terpotong jadi pita
+  /// tipis, dan seluruh halaman terlihat berantakan.
+  Widget _buildLayoutLayarLebar(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Row(
+        children: <Widget>[
+          // --- KOLOM KIRI: GAMBAR + NAMA APLIKASI ---
+          Expanded(flex: 5, child: _buildPanelGambar()),
 
-                      const Text(
-                        'Kata Sandi',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black54,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        controller: _passwordController,
-                        obscureText: _obscurePassword,
-                        textInputAction: TextInputAction.done,
-                        onFieldSubmitted: (_) => _loginWithEmail(),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Kata sandi wajib diisi';
-                          }
-                          return null;
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Masukkan kata sandi',
-                          hintStyle: const TextStyle(
-                            color: Colors.black38,
-                            fontSize: 14,
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.lock_outline,
-                            color: Colors.black45,
-                          ),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                              color: Colors.black45,
-                              size: 20,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _obscurePassword = !_obscurePassword;
-                              });
-                            },
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF3F4F5),
-                          errorStyle: const TextStyle(fontSize: 12),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 16,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
+          // --- KOLOM KANAN: FORMULIR ---
+          Expanded(
+            flex: 6,
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints batas) {
+                // Diberi lebar pasti, bukan hanya batas maksimum, supaya
+                // isi formulir yang memakai lebar `double.infinity`
+                // (tombol Masuk) mendapat ukuran yang jelas.
+                final double lebar = math.min(420.0, batas.maxWidth - 64);
 
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: _showForgotPasswordInfo,
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: const Text(
-                            'Lupa Kata Sandi?',
-                            style: TextStyle(
-                              color: Color(0xFF904D00),
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      // TOMBOL MASUK UTAMA
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _loginWithEmail,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF003527),
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: const Color(
-                              0xFF003527,
-                            ).withValues(alpha: 0.5),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 3,
-                            shadowColor: const Color(
-                              0xFF003527,
-                            ).withOpacity(0.5),
-                          ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.4,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Masuk',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                                    SizedBox(width: 8),
-                                    Icon(Icons.arrow_forward, size: 20),
-                                  ],
-                                ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // 👇 TOMBOL LEWATI / MODE TAMU 👇
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: OutlinedButton(
-                          onPressed: () => context.go(AppRoutes.home),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF003527),
-                            side: const BorderSide(color: Color(0xFF003527)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'Lewati & Masuk sebagai Tamu',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 32),
-
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Divider(color: Color(0xFFE0E0E0)),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text(
-                              'Atau masuk dengan',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ),
-                          const Expanded(
-                            child: Divider(color: Color(0xFFE0E0E0)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      // --- TOMBOL SOSMED (sudah terhubung ke backend) ---
-                      if (_isLoading)
-                        const Center(child: CircularProgressIndicator())
-                      else
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _buildSocialButton(
-                              logoPath: 'assets/images/google_logo.png',
-                              onTap: _loginWithGoogle,
-                            ),
-                            const SizedBox(width: 24),
-                            _buildSocialButton(
-                              logoPath: 'assets/images/apple_logo.png',
-                              onTap: _loginWithApple,
-                            ),
-                          ],
-                        ),
-                      const SizedBox(height: 40),
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text(
-                            'Belum punya akun? ',
-                            style: TextStyle(
-                              color: Colors.black54,
-                              fontSize: 14,
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: _openRegisterScreen,
-                            child: const Text(
-                              'Daftar Sekarang',
-                              style: TextStyle(
-                                color: Color(0xFF003527),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-                    ],
+                return Center(
+                  child: SizedBox(
+                    width: lebar,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      child: _buildForm(),
+                    ),
                   ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Panel gambar di sisi kiri untuk layar lebar.
+  Widget _buildPanelGambar() {
+    return const Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        DecoratedBox(
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage('assets/images/bg_login.webp'),
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+        // Digelapkan bertingkat supaya tulisan putih di atasnya tetap
+        // terbaca, apa pun bagian foto yang jatuh di belakangnya.
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: <Color>[Color(0x4D003527), Color(0xE6003527)],
+            ),
+          ),
+        ),
+        Padding(
+          padding: EdgeInsets.all(40),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[
+              Text(
+                'Insyira Muslim App',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 34,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                  height: 1.15,
+                ),
+              ),
+              SizedBox(height: 14),
+              Text(
+                'Jadwal sholat, Al-Quran, arah kiblat, kajian, dan dzikir '
+                'dalam satu tempat.',
+                style: TextStyle(
+                  color: Color(0xCCFFFFFF),
+                  fontSize: 15,
+                  height: 1.6,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Isi formulir login.
+  ///
+  /// Dipisah dari [build] karena dipakai dua tata letak sekaligus
+  /// (versi HP dan versi layar lebar).
+  Widget _buildForm() {
+    return Form(
+      key: _formKey,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Selamat Datang di Insyira Muslim App',
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF003527),
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Masuk untuk melanjutkan ibadah Anda.',
+            style: TextStyle(fontSize: 15, color: Colors.grey),
+          ),
+          const SizedBox(height: 32),
+
+          const Text(
+            'Email',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+            autocorrect: false,
+            validator: (value) {
+              final v = value?.trim() ?? '';
+              if (v.isEmpty) return 'Email wajib diisi';
+              final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+              if (!emailRegex.hasMatch(v)) {
+                return 'Format email belum benar';
+              }
+              return null;
+            },
+            decoration: InputDecoration(
+              hintText: 'Masukkan email',
+              hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+              prefixIcon: const Icon(Icons.mail_outline, color: Colors.black45),
+              filled: true,
+              fillColor: const Color(0xFFF3F4F5),
+              errorStyle: const TextStyle(fontSize: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          const Text(
+            'Kata Sandi',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _passwordController,
+            obscureText: _obscurePassword,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _loginWithEmail(),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Kata sandi wajib diisi';
+              }
+              return null;
+            },
+            decoration: InputDecoration(
+              hintText: 'Masukkan kata sandi',
+              hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+              prefixIcon: const Icon(Icons.lock_outline, color: Colors.black45),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                  color: Colors.black45,
+                  size: 20,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _obscurePassword = !_obscurePassword;
+                  });
+                },
+              ),
+              filled: true,
+              fillColor: const Color(0xFFF3F4F5),
+              errorStyle: const TextStyle(fontSize: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _showForgotPasswordInfo,
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Lupa Kata Sandi?',
+                style: TextStyle(
+                  color: Color(0xFF904D00),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
                 ),
               ),
             ),
           ),
+          const SizedBox(height: 24),
+
+          // TOMBOL MASUK UTAMA
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _loginWithEmail,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF003527),
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: const Color(
+                  0xFF003527,
+                ).withValues(alpha: 0.5),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 3,
+                shadowColor: const Color(0xFF003527).withOpacity(0.5),
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Masuk',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Icon(Icons.arrow_forward, size: 20),
+                      ],
+                    ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // 👇 TOMBOL LEWATI / MODE TAMU 👇
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: OutlinedButton(
+              onPressed: () => context.go(AppRoutes.home),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF003527),
+                side: const BorderSide(color: Color(0xFF003527)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Lewati & Masuk sebagai Tamu',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 32),
+
+          Row(
+            children: [
+              const Expanded(child: Divider(color: Color(0xFFE0E0E0))),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  'Atau masuk dengan',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ),
+              const Expanded(child: Divider(color: Color(0xFFE0E0E0))),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // --- TOMBOL SOSMED (sudah terhubung ke backend) ---
+          if (_isLoading)
+            const Center(child: CircularProgressIndicator())
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildSocialButton(
+                  logoPath: 'assets/images/google_logo.png',
+                  onTap: _loginWithGoogle,
+                ),
+                const SizedBox(width: 24),
+                _buildSocialButton(
+                  logoPath: 'assets/images/apple_logo.png',
+                  onTap: _loginWithApple,
+                ),
+              ],
+            ),
+          const SizedBox(height: 40),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Belum punya akun? ',
+                style: TextStyle(color: Colors.black54, fontSize: 14),
+              ),
+              GestureDetector(
+                onTap: _openRegisterScreen,
+                child: const Text(
+                  'Daftar Sekarang',
+                  style: TextStyle(
+                    color: Color(0xFF003527),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
         ],
       ),
     );
