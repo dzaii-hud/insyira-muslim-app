@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "38106971142",
+    "project_id": "insyira-muslim-app",
+    "storage_bucket": "insyira-muslim-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:38106971142:android:6dd58fbff94cf7dc779787",
+        "android_client_info": {
+          "package_name": "com.example.insyira_muslim_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "38106971142-pdffur4etn21n67v5hje9ndavj764k2l.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.insyira_muslim_app",
+            "certificate_hash": "2d275e0be06650cde9f3d592519720c47e869468"
+          }
+        },
+        {
+          "client_id": "38106971142-9r3vugu4javqak2dnvc0vu3nek2ocmvr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAmDDbyvk0aaGexiCG9Tip6aWc1PxF7G3U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "38106971142-9r3vugu4javqak2dnvc0vu3nek2ocmvr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

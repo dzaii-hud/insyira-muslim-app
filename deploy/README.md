@@ -5,13 +5,13 @@ beserta database-nya. Ikuti berurutan — urutannya penting.
 
 ## Alamat yang sudah berjalan
 
-| Untuk apa | Alamat |
-| --------- | ------ |
-| Aplikasi (jamaah) | https://insyiramuslimapp.pusatoleolehpekanbaru.id |
-| Panel admin | https://api.pusatoleolehpekanbaru.id/admin/dashboard |
-| API | https://api.pusatoleolehpekanbaru.id/api |
-| Web (cadangan) | https://insyira-web-production.up.railway.app |
-| API (cadangan) | https://insyira-production.up.railway.app |
+| Untuk apa         | Alamat                                               |
+| ----------------- | ---------------------------------------------------- |
+| Aplikasi (jamaah) | https://insyiramuslimapp.pusatoleolehpekanbaru.id    |
+| Panel admin       | https://api.pusatoleolehpekanbaru.id/admin/dashboard |
+| API               | https://api.pusatoleolehpekanbaru.id/api             |
+| Web (cadangan)    | https://insyira-web-production.up.railway.app        |
+| API (cadangan)    | https://insyira-production.up.railway.app            |
 
 Akun admin: `zafahudzaifah@gmail.com` — passwordnya dipilih sendiri oleh pemilik
 akun lewat menu *Daftar* di aplikasi (lihat A.6).

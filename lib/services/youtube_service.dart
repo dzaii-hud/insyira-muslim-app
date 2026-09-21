@@ -1,7 +1,8 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+
+import '../config.dart';
 
 class YouTubeVideo {
   final String id;
@@ -39,86 +40,52 @@ class YouTubeVideo {
 }
 
 class YouTubeService {
-  /// API key YouTube Data API v3.
+  /// Alamat endpoint di backend kita sendiri, BUKAN googleapis.com.
   ///
-  /// Sengaja TIDAK ditulis di dalam kode supaya tidak ikut ter-publish
-  /// (seperti kasus client secret Quran Foundation sebelumnya).
+  /// Kenapa lewat backend:
   ///
-  /// Isi lewat `--dart-define`:
-  /// ```bash
-  /// flutter run --dart-define=YOUTUBE_API_KEY=AIza...
-  /// flutter build web --release --dart-define=YOUTUBE_API_KEY=AIza...
-  /// ```
+  /// 1. **Kuota.** Kuota YouTube Data API v3 hanya 10.000 unit per hari,
+  ///    sementara `search.list` memakan 100 unit sekali panggil. Kalau
+  ///    aplikasi memanggilnya langsung, kuota habis setelah sekitar 50 kali
+  ///    halaman dibuka — dan videonya berhenti muncul tanpa pesan error.
+  ///    Server memakai endpoint yang jauh lebih murah dan menyimpan hasilnya.
   ///
-  /// WAJIB dibatasi dulu di Google Cloud Console supaya walau key-nya
-  /// terbaca orang, tetap tidak bisa dipakai dari domain/aplikasi lain:
-  ///   - Application restrictions : HTTP referrers (web) + Android apps
-  ///   - API restrictions         : hanya "YouTube Data API v3"
-  static const String _apiKey = String.fromEnvironment('YOUTUBE_API_KEY');
-
-  static const String _channelId = 'UCxYY8T_y2mAgQQCjYvWwZdw';
-
-  /// Apakah API key sudah dikonfigurasi.
-  bool get isConfigured => _apiKey.trim().isNotEmpty;
-
-  Future<List<YouTubeVideo>> getLatestVideos({int maxResults = 4}) async {
-    if (!isConfigured) {
-      debugPrint('YOUTUBE_API_KEY belum diisi — daftar video dilewati.');
-      return [];
-    }
-
-    final url = Uri.parse('https://www.googleapis.com/youtube/v3/search')
-        .replace(
-          queryParameters: {
-            'part': 'snippet',
-            'channelId': _channelId,
-            'order': 'date',
-            'type': 'video',
-            'eventType': 'completed',
-            'maxResults': '$maxResults',
-            'key': _apiKey,
-          },
-        );
-
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final items = data['items'] as List<dynamic>? ?? [];
-      return items
-          .map((e) => YouTubeVideo.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } else {
-      throw Exception('Gagal ambil video: ${response.statusCode}');
-    }
+  /// 2. **Kunci.** API key tidak ikut ter-bundle di aplikasi. Untuk versi web
+  ///    ini penting: seluruh isi `main.dart.js` bisa diunduh dan dibaca siapa
+  ///    saja, dan `--dart-define` TIDAK menyembunyikan nilainya.
+  ///
+  /// 3. **CORS.** Tidak ada urusan header, karena alamatnya milik kita sendiri.
+  Uri _endpoint(String path, [Map<String, String>? query]) {
+    return Uri.parse(
+      '${AppConfig.apiBaseUrl}/youtube/$path',
+    ).replace(queryParameters: query);
   }
 
-  Future<List<YouTubeVideo>> getLiveVideos() async {
-    if (!isConfigured) {
-      debugPrint('YOUTUBE_API_KEY belum diisi — daftar live dilewati.');
-      return [];
-    }
-
-    final url = Uri.parse('https://www.googleapis.com/youtube/v3/search')
-        .replace(
-          queryParameters: {
-            'part': 'snippet',
-            'channelId': _channelId,
-            'type': 'video',
-            'eventType': 'live',
-            'maxResults': '5',
-            'key': _apiKey,
-          },
-        );
-
+  Future<List<YouTubeVideo>> _fetch(Uri url) async {
     final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final items = data['items'] as List<dynamic>? ?? [];
-      return items
-          .map((e) => YouTubeVideo.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } else {
-      throw Exception('Gagal ambil live: ${response.statusCode}');
+
+    if (response.statusCode != 200) {
+      throw Exception('Gagal ambil data YouTube: ${response.statusCode}');
     }
+
+    final data = json.decode(response.body);
+    final items = data['items'] as List<dynamic>? ?? [];
+
+    return items
+        .map((e) => YouTubeVideo.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Empat video terbaru dari channel Insyira TV.
+  Future<List<YouTubeVideo>> getLatestVideos({int maxResults = 4}) {
+    return _fetch(_endpoint('videos', {'max': '$maxResults'}));
+  }
+
+  /// Kajian yang sedang live.
+  ///
+  /// Hasilnya di-cache 30 menit di server (pengecekan live memakai kuota
+  /// 100 unit sekali panggil), jadi bisa telat muncul sampai selama itu.
+  Future<List<YouTubeVideo>> getLiveVideos() {
+    return _fetch(_endpoint('live'));
   }
 }
