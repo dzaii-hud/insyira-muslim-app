@@ -153,28 +153,46 @@ Setelah alamat pasti, perbarui juga:
 
 ### A.6. Buat akun admin
 
-Migrasi berjalan otomatis setiap container dinyalakan, tapi **tidak ada akun
-admin yang dibuat**. Buat satu lewat menu terminal Railway:
+Migrasi berjalan otomatis setiap container dinyalakan, tapi **tidak ada satu pun
+akun yang dibuat** — termasuk akun admin. Database benar-benar kosong.
 
-**Layanan `insyira-api`** → ikon terminal di kanan atas → jalankan:
+**Langkah 1 — buat akunnya dari aplikasi.** Buka alamat web, klik *Daftar
+Sekarang*, isi nama, email, dan password pilihanmu. Password tidak pernah perlu
+diketahui siapa pun selain kamu.
 
-```sh
-php artisan tinker
+**Langkah 2 — jadikan admin.** Lewat terminal di komputer, di folder repo
+backend:
+
+```powershell
+$kode = @'
+$u = App\Models\User::where("email", "emailkamu@gmail.com")->first();
+$u->is_admin = true;
+$u->save();
+echo "is_admin=" . ($u->is_admin ? "true" : "false") . PHP_EOL;
+'@
+
+$kode | railway ssh -s insyira php artisan tinker
 ```
 
-```php
-\App\Models\User::create([
-    'name' => 'Admin',
-    'email' => 'admin@emailkamu.com',
-    'password' => bcrypt('kata-sandi-yang-kuat'),
-    'is_admin' => true,
-]);
+Kalau berhasil, keluarannya: `is_admin=true`.
+
+> **Kenapa lewat SSH, bukan `php artisan tinker` di dashboard Railway?**
+> Keduanya bisa. SSH lebih enak karena kodenya bisa dikirim lewat stdin
+> (lihat contoh di atas), sehingga tidak ada masalah tanda kutip bersarang —
+> masalah yang muncul kalau perintah panjang dikirim sebagai argumen.
+
+**Kalau SSH belum bisa dipakai:**
+
+```powershell
+ssh-keygen -t ed25519 -f $env:USERPROFILE\.ssh\id_ed25519 -C insyira-deploy
+railway ssh -s insyira echo halo     # akan menawarkan mendaftarkan kunci -> jawab Y
 ```
 
-Keluar dari tinker dengan `exit`.
+Atau tanpa SSH sama sekali: pakai terminal di **dashboard Railway**
+(layanan `insyira` → ikon terminal) lalu jalankan `php artisan tinker`.
 
-> Email harus unik. Kalau muncul error duplikat, berarti akunnya sudah ada —
-> tinggal pastikan kolom `is_admin`-nya bernilai `true`.
+Setelah itu login di `/admin/dashboard`. Halaman itu akan mengalihkan ke
+`/login` selama belum masuk — perilaku normal, bukan error.
 
 ### A.7. Verifikasi
 
