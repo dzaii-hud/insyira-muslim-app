@@ -1,0 +1,18 @@
+{
+    "_catatan": [
+        "Konfigurasi runtime aplikasi web Insyira.",
+        "",
+        "Berkas ini dibaca SETIAP KALI halaman dibuka, jadi isinya bisa diubah",
+        "langsung di server TANPA membangun ulang aplikasi.",
+        "",
+        "Biarkan kosong di sini. Skrip deploy (deploy/web/deploy.ps1) akan",
+        "mengisi build/web/config.json dengan alamat yang benar. Kalau dibiarkan",
+        "kosong, aplikasi memakai nilai dari --dart-define atau nilai bawaan",
+        "development.",
+        "",
+        "apiBaseUrl        : alamat API backend, HARUS diakhiri /api",
+        "googleWebClientId : Client ID Google tipe Web application (boleh kosong)"
+    ],
+    "apiBaseUrl": "",
+    "googleWebClientId": ""
+}

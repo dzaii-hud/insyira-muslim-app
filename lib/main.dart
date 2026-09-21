@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'config.dart';
 import 'router/app_router.dart';
 import 'theme/app_theme.dart';
 
@@ -8,6 +9,14 @@ final GlobalKey<_InsyiraAppState> appKey = GlobalKey<_InsyiraAppState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Baca config.json lebih dulu (khusus versi web).
+  //
+  // Ini harus selesai SEBELUM runApp supaya permintaan API pertama — yang
+  // bisa saja dipicu SplashScreen saat pengecekan sesi — sudah menuju alamat
+  // backend yang benar. Kalau berkasnya tidak ada, fungsi ini langsung
+  // kembali dan aplikasi memakai nilai bawaan.
+  await AppConfig.load();
 
   final prefs = await SharedPreferences.getInstance();
   final isDarkMode = prefs.getBool('is_dark_mode') ?? true;

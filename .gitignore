@@ -50,3 +50,12 @@ test-file/
 
 # Build artifacts Android (bukan kode sumber)
 /android/build/
+
+# Folder konteks deploy web — dibuat ulang setiap kali deploy
+# (lihat deploy/web/deploy.ps1). Isinya salinan build/web (~252 MB),
+# jadi tidak boleh ikut masuk git.
+#
+# ⚠️ Folder ini SENGAJA ada di daftar ini. Skrip deploy mengunggahnya dengan
+# `railway up --path-as-root --no-gitignore`, dan opsi --no-gitignore itulah
+# yang membuat isinya tetap terkirim meskipun diabaikan git.
+/deploy/web/context/

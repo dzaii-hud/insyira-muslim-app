@@ -1,0 +1,131 @@
+# ============================================================================
+# Konfigurasi Nginx untuk layanan WEB Insyira (Flutter Web).
+#
+# ⚠️ Nama berkasnya berakhiran .template dan itu WAJIB.
+# Entrypoint resmi image `nginx` otomatis menjalankan envsubst pada semua
+# berkas di /etc/nginx/templates/*.template lalu menulis hasilnya ke
+# /etc/nginx/conf.d/. Berkat itu ${PORT} bisa disuntikkan Railway tanpa perlu
+# entrypoint buatan sendiri.
+#
+# Konsekuensinya: variabel nginx HARUS ditulis tanpa kurung kurawal ($uri,
+# bukan ${uri}), sebab envsubst akan menganggap ${...} sebagai variabel
+# lingkungan.
+#
+# Berkas ini disisipkan DI DALAM blok `http`, jadi pengaturan tingkat http
+# (seperti gzip) boleh ditulis di sini.
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Kompresi.
+#
+# Bukan sekadar "biar cepat": `main.dart.js` berukuran ~3 MB dan
+# `canvaskit.js` ~1,5 MB. Tanpa kompresi, setiap pengunjung baru mengunduh
+# keduanya mentah-mentah. Dengan gzip, ukurannya turun sekitar 70%, dan
+# kuota bandwidth Railway ikut lebih hemat.
+# ---------------------------------------------------------------------------
+gzip              on;
+gzip_vary         on;
+gzip_min_length   1024;
+gzip_comp_level   6;
+gzip_proxied      any;
+gzip_types
+    text/plain
+    text/css
+    text/xml
+    text/javascript
+    application/json
+    application/javascript
+    application/xml
+    application/wasm
+    image/svg+xml;
+
+server {
+    # Railway menyuntikkan nomor port lewat ${PORT}.
+    listen ${PORT} default_server;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # -----------------------------------------------------------------------
+    # Berkas penentu VERSI aplikasi.
+    #
+    # JANGAN di-cache lama. Kalau `index.html` atau `flutter_service_worker.js`
+    # tersimpan lama di browser, pengguna akan terus memakai versi lama
+    # walaupun server sudah diperbarui, dan tidak ada cara memperbaikinya
+    # dari sisi server.
+    #
+    # "no-cache" bukan berarti "jangan disimpan": browser tetap menyimpannya,
+    # tapi wajib bertanya ke server dulu. Server membalas 304 kalau belum
+    # berubah, jadi biayanya nyaris nol.
+    #
+    # `main.dart.js` dan `canvaskit.js` ikut di sini karena nama berkasnya
+    # TIDAK mengandung hash versi — beda dengan aset hasil build Vite.
+    #
+    # `config.json` juga WAJIB di sini: berkas itulah yang menentukan alamat
+    # API backend. Kalau tersimpan lama di browser, mengubah alamat API di
+    # server tidak akan berpengaruh apa-apa bagi pengunjung lama.
+    # -----------------------------------------------------------------------
+    location ~* ^/(index\.html|flutter_bootstrap\.js|main\.dart\.js|flutter_service_worker\.js|version\.json|manifest\.json|config\.json)$ {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # -----------------------------------------------------------------------
+    # Font mushaf QCF (604 berkas, total ~198 MB).
+    #
+    # Diunduh satu per satu sesuai halaman yang dibuka. Kalau tidak di-cache
+    # lama, membuka ulang satu halaman mushaf berarti mengunduh ulang
+    # berkasnya — pemborosan bandwidth dan waktu.
+    #
+    # `immutable` aman di sini karena isi font mushaf tidak pernah berubah.
+    # -----------------------------------------------------------------------
+    location ^~ /assets/fonts/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # -----------------------------------------------------------------------
+    # Aset lain: gambar, audio dzikir, data JSON.
+    #
+    # 7 hari — cukup menghemat, tapi masih memungkinkan penggantian gambar
+    # atau audio terlihat tanpa harus menunggu berbulan-bulan.
+    # -----------------------------------------------------------------------
+    location ^~ /assets/ {
+        add_header Cache-Control "public, max-age=604800";
+        try_files $uri =404;
+    }
+
+    # CanvasKit: engine Flutter versi WebAssembly. Isinya hanya berubah kalau
+    # Flutter di-upgrade, dan saat itu terjadi berkasnya ikut dibangun ulang.
+    location ^~ /canvaskit/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # Ikon PWA & favicon.
+    location ^~ /icons/ {
+        add_header Cache-Control "public, max-age=604800";
+        try_files $uri =404;
+    }
+
+    # -----------------------------------------------------------------------
+    # Sisanya: aplikasi Flutter itu sendiri.
+    #
+    # try_files jatuh ke /index.html kalau berkasnya tidak ada. Ini penting
+    # untuk tautan dalam seperti /surah/2?ayat=255: berkasnya memang tidak
+    # pernah ada di server, dan Flutter yang membacanya dari alamat tersebut.
+    # Tanpa baris ini, refresh di halaman dalam akan menghasilkan 404.
+    # -----------------------------------------------------------------------
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Berkas tersembunyi (.env, .git, ...) tidak boleh bisa diunduh.
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+
+    # Jangan tampilkan versi nginx di header dan halaman error.
+    server_tokens off;
+}
