@@ -63,9 +63,9 @@ class _KajianScreenState extends State<KajianScreen> {
     }
 
     try {
-      final response = await http.get(
-        Uri.parse('${AppConfig.apiBaseUrl}/kajian'),
-      );
+      final response = await http
+          .get(Uri.parse('${AppConfig.apiBaseUrl}/kajian'))
+          .timeout(AppConfig.requestTimeout);
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         if (!mounted) return;

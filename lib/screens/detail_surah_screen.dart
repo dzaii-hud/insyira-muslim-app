@@ -215,9 +215,9 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
 
   Future<void> _fetchDetailSurah() async {
     try {
-      final response = await http.get(
-        Uri.parse('https://equran.id/api/v2/surat/${widget.nomorSurah}'),
-      );
+      final response = await http
+          .get(Uri.parse('https://equran.id/api/v2/surat/${widget.nomorSurah}'))
+          .timeout(AppConfig.requestTimeout);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -1822,10 +1822,9 @@ class MushafApi {
       '$_baseUrl/by_page/$pageNumber',
     ).replace(queryParameters: {'mushaf': '$_mushafIdQcfV2'});
 
-    final response = await http.get(
-      uri,
-      headers: {'Accept': 'application/json'},
-    );
+    final response = await http
+        .get(uri, headers: {'Accept': 'application/json'})
+        .timeout(AppConfig.requestTimeout);
 
     if (response.statusCode != 200) {
       throw Exception(
@@ -1857,10 +1856,9 @@ class MushafApi {
       '$_baseUrl/by_chapter/$chapterNumber',
     ).replace(queryParameters: {'mushaf': '$_mushafIdQcfV2'});
 
-    final response = await http.get(
-      uri,
-      headers: {'Accept': 'application/json'},
-    );
+    final response = await http
+        .get(uri, headers: {'Accept': 'application/json'})
+        .timeout(AppConfig.requestTimeout);
 
     if (response.statusCode != 200) {
       throw Exception(

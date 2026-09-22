@@ -62,7 +62,7 @@ class YouTubeService {
   }
 
   Future<List<YouTubeVideo>> _fetch(Uri url) async {
-    final response = await http.get(url);
+    final response = await http.get(url).timeout(AppConfig.requestTimeout);
 
     if (response.statusCode != 200) {
       throw Exception('Gagal ambil data YouTube: ${response.statusCode}');

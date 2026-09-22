@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config.dart';
 import '../router/app_router.dart';
 
 // --- [BARU] Pemetaan halaman awal 114 Surah (Standar Mushaf Madinah) ---
@@ -182,9 +183,9 @@ class _QuranScreenState extends State<QuranScreen> {
   // --- FUNGSI MENGAMBIL DATA DARI API ---
   Future<void> _fetchSurahData() async {
     try {
-      final response = await http.get(
-        Uri.parse('https://equran.id/api/v2/surat'),
-      );
+      final response = await http
+          .get(Uri.parse('https://equran.id/api/v2/surat'))
+          .timeout(AppConfig.requestTimeout);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);

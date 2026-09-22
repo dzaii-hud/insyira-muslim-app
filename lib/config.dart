@@ -178,6 +178,18 @@ class AppConfig {
       _runtimeBaseUrl == null && _envBaseUrl.trim().isEmpty;
 
   // =====================================================================
+  // BATAS WAKTU PERMINTAAN
+  // =====================================================================
+
+  /// Batas waktu satu permintaan HTTP ke API.
+  ///
+  /// Pakai ini di setiap `http.get`/`http.post`. Tanpa batas waktu,
+  /// permintaan ke alamat yang tidak terjangkau (misalnya IP development yang
+  /// sudah mati) tidak pernah selesai: layar terus memutar indikator memuat
+  /// dan pesan error tidak pernah muncul.
+  static const Duration requestTimeout = Duration(seconds: 20);
+
+  // =====================================================================
   // GOOGLE SIGN-IN
   // =====================================================================
 

@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../config.dart';
 import '../theme/app_theme.dart'; // 👈 WAJIB IMPORT INI
 
 class QiblaScreen extends StatefulWidget {
@@ -246,10 +247,9 @@ class _QiblaScreenState extends State<QiblaScreen> {
       final url = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&accept-language=id',
       );
-      final response = await http.get(
-        url,
-        headers: {'User-Agent': 'InsyiraApp'},
-      );
+      final response = await http
+          .get(url, headers: {'User-Agent': 'InsyiraApp'})
+          .timeout(AppConfig.requestTimeout);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);

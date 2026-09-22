@@ -49,9 +49,9 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
       });
     }
     try {
-      final response = await http.get(
-        Uri.parse('${AppConfig.apiBaseUrl}/fawaidh'),
-      );
+      final response = await http
+          .get(Uri.parse('${AppConfig.apiBaseUrl}/fawaidh'))
+          .timeout(AppConfig.requestTimeout);
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         if (!mounted) return;

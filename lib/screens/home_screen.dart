@@ -20,6 +20,7 @@ import '../services/notification_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/kajian_card_background.dart';
 import '../widgets/app_shell.dart';
+import '../widgets/notification_center.dart';
 import '../widgets/responsive_content.dart';
 
 /// Satu item menu navigasi utama.
@@ -89,6 +90,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<YouTubeVideo> _liveVideos = [];
   bool _isLoadingVideos = false;
 
+  /// Pemeriksa berkala "apakah Insyira TV sedang live".
+  ///
+  /// Server menyimpan hasil pengecekan live selama 30 menit, jadi memeriksa
+  /// lebih sering dari itu hanya membuang kuota tanpa menambah kesegaran data.
+  Timer? _liveCheckTimer;
+  static const Duration _jedaPeriksaLive = Duration(minutes: 15);
+
   // ===== KAJIAN WIDGET DI HOME =====
   List<Kajian> _homeKajianList = [];
   bool _isLoadingKajianHome = true;
@@ -120,6 +128,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _loadYouTubeData();
     _loadKajianHome();
     _loadFawaidhHome();
+
+    // Periksa kabar kajian live secara berkala selama aplikasi terbuka.
+    // Pemeriksaan pertama ikut lewat baris _loadYouTubeData() di atas.
+    _liveCheckTimer = Timer.periodic(_jedaPeriksaLive, (_) {
+      _loadYouTubeData();
+    });
   }
 
   Future<void> _loadLastRead() async {
@@ -135,9 +149,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   Future<void> _loadKajianHome() async {
     try {
-      final response = await http.get(
-        Uri.parse('${AppConfig.apiBaseUrl}/kajian'),
-      );
+      final response = await http
+          .get(Uri.parse('${AppConfig.apiBaseUrl}/kajian'))
+          .timeout(AppConfig.requestTimeout);
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         if (mounted) {
@@ -158,9 +172,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _loadFawaidhHome() async {
     if (mounted) setState(() => _errorFawaidhHome = '');
     try {
-      final response = await http.get(
-        Uri.parse('${AppConfig.apiBaseUrl}/fawaidh'),
-      );
+      final response = await http
+          .get(Uri.parse('${AppConfig.apiBaseUrl}/fawaidh'))
+          .timeout(AppConfig.requestTimeout);
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         if (mounted) {
@@ -205,12 +219,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _isLoadingVideos = false;
         });
       }
+      await _beritahuKalauLive(live);
     } catch (e) {
       debugPrint('Error load YouTube: $e');
       if (mounted) {
         setState(() => _isLoadingVideos = false);
       }
     }
+  }
+
+  /// Mengirim notifikasi "kajian sedang live" — SATU KALI per siaran.
+  ///
+  /// Dipanggil setiap kali daftar video live diperbarui. Siaran yang sama
+  /// tidak akan memberitahu dua kali, karena ID videonya dicatat di
+  /// perangkat. Begitu siaran berakhir dan mulai siaran baru dengan ID
+  /// berbeda, notifikasi muncul lagi.
+  Future<void> _beritahuKalauLive(List<YouTubeVideo> live) async {
+    if (live.isEmpty) return;
+
+    // Kepala daftar = siaran yang paling relevan saat ini.
+    final YouTubeVideo siaran = live.first;
+    if (siaran.id.trim().isEmpty) return;
+
+    final String? sudahDiberitahu = await _notificationService
+        .lastNotifiedLiveVideoId();
+    if (sudahDiberitahu == siaran.id) return;
+
+    await _notificationService.showKajianLiveNotification(
+      judul: siaran.title,
+      videoId: siaran.id,
+    );
+    await _notificationService.setLastNotifiedLiveVideoId(siaran.id);
   }
 
   Future<void> _openYouTubeChannel() async {
@@ -271,6 +310,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    _liveCheckTimer?.cancel();
     super.dispose();
   }
 
@@ -284,6 +324,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _loadLastRead();
       _loadKajianHome();
       _loadFawaidhHome();
+      // Begitu aplikasi dibuka lagi, langsung cek kabar live — jangan tunggu
+      // timer 15 menit berikutnya.
+      _loadYouTubeData();
     }
   }
 
@@ -425,7 +468,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         String seconds = (diff.inSeconds % 60).toString().padLeft(2, '0');
 
         setState(() {
-          _countdownText = "-$hours:$minutes:$seconds";
+          _countdownText = "$hours:$minutes:$seconds";
         });
       }
     }
@@ -1285,23 +1328,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         color: AppColors.getPrimaryText(context),
                         size: 26,
                       ),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text(
-                              'Tidak ada notifikasi baru',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            backgroundColor: const Color(0xFF003527),
-                            behavior: SnackBarBehavior.floating,
-                            margin: const EdgeInsets.all(20),
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      },
+                      onPressed: () => showNotificationCenter(context),
                     ),
                   ],
                 ),
@@ -1349,32 +1376,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         centerTitle: true,
         actions: [
           IconButton(
+            tooltip: 'Notifikasi',
             icon: Icon(
               Icons.notifications_none,
               color: AppColors.getPrimaryText(context),
               size: 28,
             ),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text(
-                    'Tidak ada notifikasi baru',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  backgroundColor: const Color(0xFF003527),
-                  behavior: SnackBarBehavior.floating,
-                  margin: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).size.height - 200,
-                    left: 20,
-                    right: 20,
-                  ),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            },
+            onPressed: () => showNotificationCenter(context),
           ),
           const SizedBox(width: 8),
         ],
