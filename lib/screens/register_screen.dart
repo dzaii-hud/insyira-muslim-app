@@ -28,6 +28,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
   static const Color _accent = Color(0xFF904D00);
   static const Color _fieldFill = Color(0xFFF3F4F5);
 
+  /// Warna teks yang DIKETIK user di kolom isian.
+  ///
+  /// Harus diisi eksplisit. Tema bawaan aplikasi adalah GELAP, jadi kalau
+  /// dibiarkan, teks di kolom ini memakai warna terang dan nyaris tidak
+  /// terlihat di atas latar kolom yang terang (dilaporkan tester 22 Sep 2026).
+  static const Color _fieldText = Color(0xFF191C1D);
+
+  /// Warna teks petunjuk (hint). `Colors.black38` terlalu pudar di atas
+  /// latar terang sehingga sulit dibaca.
+  static const Color _hintText = Color(0xFF5F6368);
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -155,6 +166,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _nameController,
+                      style: const TextStyle(color: _fieldText, fontSize: 15),
                       textInputAction: TextInputAction.next,
                       textCapitalization: TextCapitalization.words,
                       decoration: _inputDecoration(
@@ -177,6 +189,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _emailController,
+                      style: const TextStyle(color: _fieldText, fontSize: 15),
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.next,
                       autocorrect: false,
@@ -202,6 +215,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _passwordController,
+                      style: const TextStyle(color: _fieldText, fontSize: 15),
                       obscureText: _obscurePassword,
                       textInputAction: TextInputAction.next,
                       decoration: _inputDecoration(
@@ -235,6 +249,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _confirmController,
+                      style: const TextStyle(color: _fieldText, fontSize: 15),
                       obscureText: _obscurePassword,
                       textInputAction: TextInputAction.done,
                       onFieldSubmitted: (_) => _submit(),
@@ -344,7 +359,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+      hintStyle: const TextStyle(color: _hintText, fontSize: 14),
       prefixIcon: Icon(icon, color: Colors.black45),
       suffixIcon: suffix,
       filled: true,

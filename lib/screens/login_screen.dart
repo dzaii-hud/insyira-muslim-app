@@ -433,6 +433,10 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 8),
           TextFormField(
             controller: _emailController,
+            // Warna teks eksplisit: tema bawaan aplikasi GELAP, jadi tanpa ini
+            // teks yang diketik berwarna terang dan nyaris tak terlihat di
+            // atas latar kolom yang terang (dilaporkan tester 22 Sep 2026).
+            style: const TextStyle(color: Color(0xFF191C1D), fontSize: 15),
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
             autocorrect: false,
@@ -447,7 +451,10 @@ class _LoginScreenState extends State<LoginScreen> {
             },
             decoration: InputDecoration(
               hintText: 'Masukkan email',
-              hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+              hintStyle: const TextStyle(
+                color: Color(0xFF5F6368),
+                fontSize: 14,
+              ),
               prefixIcon: const Icon(Icons.mail_outline, color: Colors.black45),
               filled: true,
               fillColor: const Color(0xFFF3F4F5),
@@ -472,6 +479,7 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 8),
           TextFormField(
             controller: _passwordController,
+            style: const TextStyle(color: Color(0xFF191C1D), fontSize: 15),
             obscureText: _obscurePassword,
             textInputAction: TextInputAction.done,
             onFieldSubmitted: (_) => _loginWithEmail(),
@@ -483,7 +491,10 @@ class _LoginScreenState extends State<LoginScreen> {
             },
             decoration: InputDecoration(
               hintText: 'Masukkan kata sandi',
-              hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+              hintStyle: const TextStyle(
+                color: Color(0xFF5F6368),
+                fontSize: 14,
+              ),
               prefixIcon: const Icon(Icons.lock_outline, color: Colors.black45),
               suffixIcon: IconButton(
                 icon: Icon(
