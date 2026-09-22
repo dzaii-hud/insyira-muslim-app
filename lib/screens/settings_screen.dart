@@ -189,14 +189,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _testAdzanNotification() async {
-    await _notificationService.ensureReady();
+    // Bedakan "izin notifikasi belum aktif" dari "gagal menampilkan".
+    // Dulu status izin diabaikan, jadi pesan yang muncul selalu "gagal"
+    // tanpa petunjuk apa pun.
+    final siap = await _notificationService.ensureReady();
+
+    if (!siap) {
+      if (!mounted) return;
+      _showSnackBar(
+        'Izin notifikasi belum aktif. Buka Pengaturan HP > Aplikasi > '
+        'Insyira Muslim App > Notifikasi, lalu nyalakan.',
+        isSuccess: false,
+      );
+      return;
+    }
+
     final ok = await _notificationService.showTestAzan();
 
     if (!mounted) return;
+    final detail = _notificationService.lastTestAzanError;
+    final petunjuk = detail == null
+        ? ''
+        : ' (${detail.length > 120 ? '${detail.substring(0, 120)}...' : detail})';
     _showSnackBar(
       ok
           ? 'Notifikasi tes adzan dikirim. Cek notification bar HP kamu.'
-          : 'Gagal mengirim notifikasi tes adzan.',
+          : 'Gagal mengirim notifikasi tes adzan.$petunjuk',
       isSuccess: ok,
     );
   }

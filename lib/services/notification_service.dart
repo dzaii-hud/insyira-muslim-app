@@ -224,9 +224,14 @@ class NotificationService {
         >();
     if (android == null) return true;
 
-    final enabled = await android.areNotificationsEnabled() ?? true;
+    var enabled = await android.areNotificationsEnabled() ?? true;
     if (!enabled) {
+      // Minta izin, lalu BACA ULANG statusnya.
+      //
+      // Versi lama mengembalikan status SEBELUM diminta, sehingga selalu
+      // melaporkan "izin tertutup" walaupun user baru saja menyetujuinya.
       await android.requestNotificationsPermission();
+      enabled = await android.areNotificationsEnabled() ?? false;
     }
     try {
       await android.requestExactAlarmsPermission();
@@ -390,11 +395,21 @@ class NotificationService {
     );
   }
 
+  /// Pesan kesalahan terakhir saat menampilkan notifikasi tes adzan.
+  ///
+  /// Dipakai halaman Pengaturan supaya penyebab aslinya bisa ikut dilaporkan
+  /// tester, bukan cuma "gagal" tanpa keterangan (dilaporkan 22 Sep 2026).
+  String? lastTestAzanError;
+
   /// Menampilkan notifikasi adzan SEKARANG (dipakai tombol "Tes Adzan").
   Future<bool> showTestAzan() async {
     if (!isSupported) return false;
-    await init();
+    lastTestAzanError = null;
     try {
+      // init() ikut di dalam try. Sebelumnya di luar, jadi kalau pembuatan
+      // channel gagal (mis. berkas suara bermasalah) exception-nya lolos
+      // tanpa terekam.
+      await init();
       await _notifications.show(
         _testAzanNotificationId,
         'Tes Suara Adzan',
@@ -425,6 +440,7 @@ class NotificationService {
       );
       return true;
     } catch (e) {
+      lastTestAzanError = e.toString();
       debugPrint('Gagal menampilkan notifikasi tes adzan: $e');
       return false;
     }
