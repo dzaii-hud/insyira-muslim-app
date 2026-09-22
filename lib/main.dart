@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'config.dart';
 import 'router/app_router.dart';
@@ -17,6 +18,12 @@ void main() async {
   // backend yang benar. Kalau berkasnya tidak ada, fungsi ini langsung
   // kembali dan aplikasi memakai nilai bawaan.
   await AppConfig.load();
+
+  // Data nama hari & bulan berbahasa Indonesia untuk `intl`.
+  //
+  // Tanpa ini, `DateFormat('EEEE, d MMMM y', 'id_ID')` melempar
+  // LocaleDataException — dipakai panel notifikasi untuk judul tanggal.
+  await initializeDateFormatting('id_ID');
 
   final prefs = await SharedPreferences.getInstance();
   final isDarkMode = prefs.getBool('is_dark_mode') ?? true;

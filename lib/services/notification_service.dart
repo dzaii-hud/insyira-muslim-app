@@ -35,6 +35,12 @@ class NotificationService {
   static const String azanChannelId = 'azan_channel_v2';
   static const String dzikirChannelId = 'dzikir_channel_v1';
 
+  /// Channel untuk kabar "kajian sedang live".
+  ///
+  /// Dipisah dari channel adzan supaya user bisa membisukan kabar kajian
+  /// tanpa ikut mematikan adzan (dan sebaliknya).
+  static const String kajianChannelId = 'kajian_live_channel_v1';
+
   /// Nama file native tanpa ekstensi di `android/app/src/main/res/raw/`.
   static const String _azanRawSound = 'adzan';
 
@@ -46,6 +52,10 @@ class NotificationService {
   static const String _dzikirChannelName = 'Dzikir Harian';
   static const String _dzikirChannelDesc =
       'Notifikasi setelah kamu menyelesaikan dzikir';
+
+  static const String _kajianChannelName = 'Kajian Live';
+  static const String _kajianChannelDesc =
+      'Kabar ketika Insyira TV sedang menyiarkan kajian secara live';
 
   /// ID notifikasi adzan agar stabil (tidak berubah-ubah seperti hashCode).
   static const Map<String, int> _prayerNotificationIds = {
@@ -59,6 +69,14 @@ class NotificationService {
   /// ID notifikasi penyelesaian dzikir.
   static const int _dzikirPagiNotificationId = 2101;
   static const int _dzikirSoreNotificationId = 2102;
+
+  /// ID notifikasi kabar kajian live. Sengaja ID tetap (bukan hashCode)
+  /// supaya kabar baru menimpa kabar lama, tidak menumpuk di laci notifikasi.
+  static const int _kajianLiveNotificationId = 2201;
+
+  /// Menyimpan ID video live terakhir yang sudah diberitahukan, supaya satu
+  /// siaran tidak mengirim notifikasi berulang kali.
+  static const String _liveVideoKey = 'notified_live_video_id';
 
   /// ID untuk tombol "Tes Adzan" di halaman pengaturan.
   static const int _testAzanNotificationId = 2999;
@@ -175,6 +193,19 @@ class NotificationService {
         dzikirChannelId,
         _dzikirChannelName,
         description: _dzikirChannelDesc,
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
+
+    // Channel kajian live: pentingnya HIGH (perlu muncul sebagai banner),
+    // tapi tanpa suara adzan — cukup getaran + suara notifikasi bawaan.
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        kajianChannelId,
+        _kajianChannelName,
+        description: _kajianChannelDesc,
         importance: Importance.high,
         playSound: true,
         enableVibration: true,
@@ -443,6 +474,119 @@ class NotificationService {
     } catch (e) {
       debugPrint('Gagal menampilkan notifikasi dzikir: $e');
     }
+  }
+
+  // ===================================================================
+  // KABAR KAJIAN LIVE
+  // ===================================================================
+  /// Menampilkan notifikasi "kajian sedang live" beserta judul siarannya.
+  ///
+  /// Dipanggil dari Home setiap kali aplikasi memeriksa endpoint
+  /// `/youtube/live` dan menemukan siaran yang BELUM pernah diberitahukan.
+  /// [videoId] ikut dikirim sebagai payload supaya saat notifikasinya ditekan
+  /// aplikasi bisa langsung membuka siarannya di YouTube.
+  Future<void> showKajianLiveNotification({
+    required String judul,
+    required String videoId,
+  }) async {
+    if (!isSupported) return;
+    await init();
+
+    final String judulBersih = judul.trim().isEmpty
+        ? 'Insyira TV sedang live'
+        : judul.trim();
+
+    try {
+      await _notifications.show(
+        _kajianLiveNotificationId,
+        '🔴 Kajian sedang LIVE sekarang',
+        judulBersih,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            kajianChannelId,
+            _kajianChannelName,
+            channelDescription: _kajianChannelDesc,
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            category: AndroidNotificationCategory.social,
+            ticker: 'Kajian live dimulai',
+            styleInformation: BigTextStyleInformation(
+              '$judulBersih\n\nKetuk untuk menonton di YouTube.',
+            ),
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBanner: true,
+            presentSound: true,
+          ),
+        ),
+        payload: 'kajian_live:$videoId',
+      );
+    } catch (e) {
+      debugPrint('Gagal menampilkan notifikasi kajian live: $e');
+    }
+  }
+
+  /// ID video live terakhir yang sudah diberitahukan ke user.
+  ///
+  /// Dipakai supaya satu siaran hanya menghasilkan SATU notifikasi, walau
+  /// aplikasi memeriksa status live berkali-kali.
+  Future<String?> lastNotifiedLiveVideoId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_liveVideoKey);
+  }
+
+  Future<void> setLastNotifiedLiveVideoId(String videoId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_liveVideoKey, videoId);
+  }
+
+  /// Menghapus penanda "sudah diberitahukan" supaya siaran berikutnya
+  /// (ID berbeda) tetap memicu notifikasi baru. Berguna untuk pengujian.
+  Future<void> clearLastNotifiedLiveVideo() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_liveVideoKey);
+  }
+
+  // ===================================================================
+  // DATA UNTUK PANEL NOTIFIKASI
+  // ===================================================================
+  /// Jadwal sholat terakhir yang dipakai untuk menjadwalkan adzan.
+  ///
+  /// Dikembalikan sebagai peta `namaWaktu -> waktu`, contoh:
+  /// `{'Subuh': 2026-09-22 04:48, 'Dzuhur': ...}`.
+  ///
+  /// Panel notifikasi (ikon lonceng) memakai ini untuk menampilkan semua
+  /// notifikasi adzan hari ini beserta statusnya. Urutannya sengaja mengikuti
+  /// urutan waktu sholat, bukan urutan abjad.
+  Future<Map<String, DateTime>> getSavedPrayerTimes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_prayerTimesKey);
+    if (raw == null) return <String, DateTime>{};
+
+    try {
+      final Map<String, dynamic> decoded =
+          jsonDecode(raw) as Map<String, dynamic>;
+
+      final hasil = <String, DateTime>{};
+      for (final nama in _prayerNotificationIds.keys) {
+        final nilai = decoded[nama];
+        final waktu = DateTime.tryParse(nilai?.toString() ?? '');
+        if (waktu != null) hasil[nama] = waktu;
+      }
+      return hasil;
+    } catch (e) {
+      debugPrint('Gagal membaca jadwal sholat tersimpan: $e');
+      return <String, DateTime>{};
+    }
+  }
+
+  /// Apakah adzan otomatis sedang aktif (toggle di halaman Pengaturan).
+  Future<bool> isAzanEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('enable_azan') ?? true;
   }
 
   // ===================================================================
