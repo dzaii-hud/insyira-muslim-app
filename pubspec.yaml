@@ -3,8 +3,12 @@ description: "A new Flutter project."
 publish_to: 'none'
 # ⚠️ Angka setelah tanda + adalah versionCode untuk Google Play. Play MENOLAK
 # nilai yang sudah pernah diunggah, jadi WAJIB dinaikkan setiap kali mengunggah
-# build baru (1.0.0+1 sudah dipakai untuk rilis Internal testing pertama).
-version: 1.0.0+3
+# build baru (1.0.0+1 internal testing, +3 closed testing pertama).
+# +4 (22 Sep 2026): perbaikan warna kolom isian Login/Daftar + diagnostik notifikasi adzan.
+# +5 (22 Sep 2026): perbaikan suara adzan hilang di build rilis (resource shrinker
+# menghapus res/raw/adzan.mp3 — lihat android/app/src/main/res/raw/keep.xml) +
+# hitung mundur "Shalat Selanjutnya" tidak lagi macet di "Memuat..." setelah Isya.
+version: 1.0.0+5
 
 environment:
   sdk: ^3.10.4

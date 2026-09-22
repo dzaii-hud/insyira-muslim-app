@@ -78,6 +78,32 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _countdownText = "--:--:--";
   String _activePrayer = "Dzuhur";
 
+  /// Lokasi/GPS benar-benar tidak bisa dipakai — BUKAN sekadar masih memuat.
+  /// Dipakai supaya kartu jadwal tidak selamanya menampilkan "Memuat...".
+  bool _lokasiBermasalah = false;
+
+  /// Koordinat & parameter perhitungan disimpan supaya jadwal untuk BESOK (dan
+  /// jadwal hari baru setelah lewat tengah malam) bisa dihitung tanpa meminta
+  /// GPS lagi.
+  Coordinates? _koordinatSholat;
+  CalculationParameters? _parameterSholat;
+
+  /// Waktu PASTI sholat berikutnya.
+  ///
+  /// Dulu layar ini hanya menyimpan JENIS sholatnya ([_nextPrayer]) lalu mencari
+  /// waktunya lewat `_prayerTimes!.timeForPrayer(...)`. Cara itu gagal setelah
+  /// Isya: `nextPrayer()` mengembalikan [Prayer.none] begitu seluruh sholat hari
+  /// ini terlewat, sehingga kartu "SHALAT SELANJUTNYA" macet di tulisan
+  /// "Memuat..." sampai tanggal berganti.
+  DateTime? _waktuSholatBerikutnya;
+
+  /// Sholat berikutnya jatuh BESOK (Subuh), bukan hari ini.
+  bool _berikutnyaBesok = false;
+
+  /// Penjaga supaya pemuatan ulang jadwal saat tanggal berganti tidak dijalankan
+  /// berkali-kali oleh timer 1 detik.
+  bool _sedangMuatUlangJadwal = false;
+
   // ====== VARIABEL MEMORI BACAAN ======
   String? lastReadSurah;
   int? lastReadSurahNumber;
@@ -334,7 +360,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
 
     if (!serviceEnabled) {
-      setState(() => _locationName = "GPS belum aktif");
+      setState(() {
+        _locationName = "GPS belum aktif";
+        _lokasiBermasalah = true;
+      });
 
       if (!mounted) return;
       await showDialog(
@@ -398,13 +427,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        setState(() => _locationName = "Izin lokasi ditolak");
+        setState(() {
+          _locationName = "Izin lokasi ditolak";
+          _lokasiBermasalah = true;
+        });
         return;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      setState(() => _locationName = "Izin lokasi diblokir");
+      setState(() {
+        _locationName = "Izin lokasi diblokir";
+        _lokasiBermasalah = true;
+      });
       return;
     }
 
@@ -431,11 +466,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final params = CalculationMethod.singapore.getParameters();
     params.madhab = Madhab.shafi;
 
+    final sekarang = DateTime.now();
     setState(() {
+      _lokasiBermasalah = false;
+      _koordinatSholat = coordinates;
+      _parameterSholat = params;
       _prayerTimes = PrayerTimes.today(coordinates, params);
-      _nextPrayer = _prayerTimes?.nextPrayer();
+      _hitungSholatBerikutnya(sekarang: sekarang);
       _activePrayer = _getPrayerName(
-        _prayerTimes?.currentPrayer() ?? Prayer.fajr,
+        _prayerTimes?.currentPrayerByDateTime(sekarang) ?? Prayer.fajr,
       );
     });
 
@@ -444,34 +483,98 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _updateCountdown() {
-    if (_prayerTimes == null ||
-        _nextPrayer == null ||
-        _nextPrayer == Prayer.none)
-      return;
+  /// Menghitung sholat berikutnya SEKALIGUS menyimpan waktu pastinya.
+  ///
+  /// `PrayerTimes.nextPrayer()` mengembalikan [Prayer.none] setelah Isya, karena
+  /// seluruh sholat hari itu sudah terlewat. Kalau itu terjadi, jadwal BESOK
+  /// dihitung lalu Subuh dipakai sebagai sholat berikutnya — supaya hitungan
+  /// mundur tetap hidup sepanjang malam, tidak berhenti di "Memuat...".
+  void _hitungSholatBerikutnya({DateTime? sekarang}) {
+    final jadwalHariIni = _prayerTimes;
+    final koordinat = _koordinatSholat;
+    final parameter = _parameterSholat;
+    if (jadwalHariIni == null || koordinat == null || parameter == null) return;
 
-    final nextPrayerTime = _prayerTimes!.timeForPrayer(_nextPrayer!);
-    if (nextPrayerTime != null) {
-      final now = DateTime.now();
-      final diff = nextPrayerTime.difference(now);
+    final saat = sekarang ?? DateTime.now();
 
-      if (diff.isNegative) {
-        setState(() {
-          _nextPrayer = _prayerTimes!.nextPrayer();
-          _activePrayer = _getPrayerName(
-            _prayerTimes?.currentPrayer() ?? Prayer.fajr,
-          );
-        });
-      } else {
-        String hours = diff.inHours.toString().padLeft(2, '0');
-        String minutes = (diff.inMinutes % 60).toString().padLeft(2, '0');
-        String seconds = (diff.inSeconds % 60).toString().padLeft(2, '0');
+    var berikutnya = jadwalHariIni.nextPrayerByDateTime(saat);
+    var sumberJadwal = jadwalHariIni;
+    var besok = false;
 
-        setState(() {
-          _countdownText = "$hours:$minutes:$seconds";
-        });
-      }
+    if (berikutnya == Prayer.none) {
+      sumberJadwal = PrayerTimes(
+        koordinat,
+        DateComponents.from(saat.add(const Duration(days: 1))),
+        parameter,
+      );
+      berikutnya = Prayer.fajr;
+      besok = true;
     }
+
+    _nextPrayer = berikutnya;
+    _berikutnyaBesok = besok;
+    _waktuSholatBerikutnya = sumberJadwal.timeForPrayer(berikutnya);
+  }
+
+  /// Menghitung ulang jadwal sholat untuk tanggal HARI INI memakai koordinat
+  /// yang sudah tersimpan (tanpa meminta GPS lagi). Dijalankan otomatis begitu
+  /// tanggal berganti supaya jam sholat tidak tertinggal sehari.
+  Future<void> _muatUlangJadwalSholat() async {
+    if (_sedangMuatUlangJadwal) return;
+
+    final koordinat = _koordinatSholat;
+    final parameter = _parameterSholat;
+    if (koordinat == null || parameter == null || !mounted) return;
+
+    _sedangMuatUlangJadwal = true;
+    try {
+      final jadwalBaru = PrayerTimes.today(koordinat, parameter);
+      setState(() {
+        _prayerTimes = jadwalBaru;
+        _hitungSholatBerikutnya();
+        _activePrayer = _getPrayerName(jadwalBaru.currentPrayer());
+      });
+      await _notificationService.schedulePrayerNotifications(jadwalBaru);
+    } finally {
+      _sedangMuatUlangJadwal = false;
+    }
+  }
+
+  void _updateCountdown() {
+    final sekarang = DateTime.now();
+    final jadwal = _prayerTimes;
+
+    // Lewat tengah malam -> jadwal "hari ini" sudah basi, hitung ulang dulu.
+    if (jadwal != null && !DateUtils.isSameDay(sekarang, jadwal.fajr)) {
+      unawaited(_muatUlangJadwalSholat());
+      return;
+    }
+
+    final target = _waktuSholatBerikutnya;
+    if (target == null) return;
+
+    final diff = target.difference(sekarang);
+
+    if (diff.isNegative) {
+      // Waktunya baru saja lewat -> maju ke sholat berikutnya.
+      setState(() {
+        _hitungSholatBerikutnya(sekarang: sekarang);
+        if (jadwal != null) {
+          _activePrayer = _getPrayerName(
+            jadwal.currentPrayerByDateTime(sekarang),
+          );
+        }
+      });
+      return;
+    }
+
+    final hours = diff.inHours.toString().padLeft(2, '0');
+    final minutes = (diff.inMinutes % 60).toString().padLeft(2, '0');
+    final seconds = (diff.inSeconds % 60).toString().padLeft(2, '0');
+
+    setState(() {
+      _countdownText = "$hours:$minutes:$seconds";
+    });
   }
 
   String _getPrayerName(Prayer prayer) {
@@ -1586,14 +1689,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     String nextPrayerTimeString = "--:--";
     String nextPrayerNameString = "Memuat...";
 
-    if (_prayerTimes != null &&
-        _nextPrayer != null &&
-        _nextPrayer != Prayer.none) {
-      final time = _prayerTimes!.timeForPrayer(_nextPrayer!);
-      if (time != null) {
-        nextPrayerTimeString = DateFormat('HH:mm').format(time);
-        nextPrayerNameString = _getPrayerName(_nextPrayer!);
+    final target = _waktuSholatBerikutnya;
+    if (target != null && _nextPrayer != null && _nextPrayer != Prayer.none) {
+      nextPrayerTimeString = DateFormat('HH:mm').format(target);
+      nextPrayerNameString = _getPrayerName(_nextPrayer!);
+      // Setelah Isya, sholat berikutnya adalah Subuh BESOK. Diberi tanda supaya
+      // tidak dikira jadwal hari ini.
+      if (_berikutnyaBesok) {
+        nextPrayerNameString = "$nextPrayerNameString (besok)";
       }
+    } else if (_prayerTimes == null && _lokasiBermasalah) {
+      // Bukan "sedang memuat" — GPS/lokasi memang belum bisa dipakai.
+      nextPrayerNameString = "Jadwal tidak tersedia";
     }
 
     return Container(

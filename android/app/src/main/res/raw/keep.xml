@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  JANGAN DIHAPUS. Berkas ini WAJIB ada.
+
+  Build rilis Flutter menyalakan `shrinkResources` (resource shrinker). Shrinker
+  hanya melihat rujukan resource yang TERTULIS di kode. Plugin
+  `flutter_local_notifications` mencari suara adzan lewat NAMA TEKS saat aplikasi
+  berjalan:
+
+      getIdentifier("adzan", "raw", packageName)
+
+  Rujukan seperti itu tidak terlihat oleh shrinker, sehingga `res/raw/adzan.mp3`
+  dianggap "reachable=false" dan DIHAPUS dari APK/AAB. Akibatnya di build rilis
+  muncul error:
+
+      PlatformException(invalid_sound: The resource adzan could not be found...)
+
+  Di build debug shrinker tidak jalan, jadi bug ini hanya muncul di rilis.
+
+  Baris `tools:keep` di bawah memaksa shrinker MEMPERTAHANKAN suara adzan.
+  Bukti pemeriksaan: `build/app/outputs/mapping/release/resources.txt`
+  harus berbunyi `raw/adzan : reachable=true`.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/adzan" />
