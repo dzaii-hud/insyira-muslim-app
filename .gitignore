@@ -39,6 +39,16 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# ---------------------------------------------------------------------------
+# KUNCI RILIS ANDROID — JANGAN PERNAH DI-COMMIT
+# Kuncinya ada di luar repo (%USERPROFILE%\.insyira\). Kalau bocor, orang lain
+# bisa menerbitkan pembaruan palsu atas nama aplikasi ini di Google Play.
+# ---------------------------------------------------------------------------
+android/key.properties
+**/*.jks
+**/*.keystore
+!debug.keystore
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile

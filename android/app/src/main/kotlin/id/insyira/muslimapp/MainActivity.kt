@@ -1,4 +1,4 @@
-package com.example.insyira_muslim_app
+package id.insyira.muslimapp
 
 import io.flutter.embedding.android.FlutterActivity
 

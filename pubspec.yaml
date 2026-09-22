@@ -1,7 +1,10 @@
 name: insyira_muslim_app
 description: "A new Flutter project."
 publish_to: 'none'
-version: 1.0.0+1
+# ⚠️ Angka setelah tanda + adalah versionCode untuk Google Play. Play MENOLAK
+# nilai yang sudah pernah diunggah, jadi WAJIB dinaikkan setiap kali mengunggah
+# build baru (1.0.0+1 sudah dipakai untuk rilis Internal testing pertama).
+version: 1.0.0+3
 
 environment:
   sdk: ^3.10.4

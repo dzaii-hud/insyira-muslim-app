@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:38106971142:android:6dd58fbff94cf7dc779787",
         "android_client_info": {
-          "package_name": "com.example.insyira_muslim_app"
+          "package_name": "id.insyira.muslimapp"
         }
       },
       "oauth_client": [
@@ -17,7 +17,7 @@
           "client_id": "38106971142-pdffur4etn21n67v5hje9ndavj764k2l.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.example.insyira_muslim_app",
+            "package_name": "id.insyira.muslimapp",
             "certificate_hash": "2d275e0be06650cde9f3d592519720c47e869468"
           }
         },

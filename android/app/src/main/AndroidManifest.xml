@@ -9,7 +9,20 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <!--
+      JANGAN tambahkan USE_EXACT_ALARM lagi.
+
+      Permission itu hanya boleh dipakai kalau FUNGSI INTI aplikasi adalah
+      alarm/timer atau kalender (kebijakan Google Play, "Exact Alarm
+      Permission"). Fungsi inti Insyira Muslim App bukan itu, jadi aplikasi
+      akan ditolak saat rilis. Sudah pernah ditanyakan Play Console lewat
+      deklarasi "Exact alarm permissions".
+
+      Notifikasi adzan tetap bisa presisi lewat SCHEDULE_EXACT_ALARM, dengan
+      syarat user memberi izin "Alarm & pengingat" di pengaturan sistem.
+      notification_service.dart sudah menangani kalau izin itu belum ada
+      (turun ke mode inexact, bukan gagal).
+    -->
     
     <application
         android:label="Insyira MuslimApp"
