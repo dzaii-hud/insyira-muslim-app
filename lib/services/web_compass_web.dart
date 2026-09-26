@@ -70,8 +70,9 @@ class WebCompass {
     if (!perluIzin) return true;
     try {
       final JSObject ctor = _konstruktor!;
-      final JSPromise<JSString> janji = ctor
-          .callMethod<JSPromise<JSString>>('requestPermission'.toJS);
+      final JSPromise<JSString> janji = ctor.callMethod<JSPromise<JSString>>(
+        'requestPermission'.toJS,
+      );
       final String status = (await janji.toDart).toDart;
       return status == 'granted';
     } catch (e) {
@@ -92,7 +93,8 @@ class WebCompass {
 
   /// Objek global `DeviceOrientationEvent` (berfungsi juga sebagai penanda
   /// bahwa API-nya memang ada di peramban ini).
-  static JSObject? get _konstruktor => _objek(web.window['DeviceOrientationEvent']);
+  static JSObject? get _konstruktor =>
+      _objek(web.window['DeviceOrientationEvent']);
 
   static void _pasang() {
     if (_terpasang) return;
@@ -152,7 +154,9 @@ class WebCompass {
   /// Rotasi layar dalam derajat (0 / 90 / 180 / 270).
   static double _sudutLayar() {
     try {
-      final JSObject? orientasi = _objek(_objek(web.window['screen'])?['orientation']);
+      final JSObject? orientasi = _objek(
+        _objek(web.window['screen'])?['orientation'],
+      );
       if (orientasi != null) {
         return _angka(orientasi['angle']) ?? 0;
       }
