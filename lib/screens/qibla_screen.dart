@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
@@ -8,6 +9,7 @@ import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../config.dart';
+import '../services/web_compass.dart';
 import '../theme/app_theme.dart'; // 👈 WAJIB IMPORT INI
 
 class QiblaScreen extends StatefulWidget {
@@ -34,6 +36,16 @@ class _QiblaScreenState extends State<QiblaScreen> {
   CameraController? _cameraController;
   bool _isCameraInitialized = false;
 
+  // --- VARIABEL KOMPAS WEB (peramban HP) ---
+  /// Apakah izin sensor sudah diberikan. iOS 13+ mewajibkannya dan harus
+  /// diminta lewat aksi user (tekan tombol), bukan otomatis saat halaman dibuka.
+  bool _izinSensorWeb = false;
+
+  /// HP-nya tidak mengirim data sensor sama sekali (mis. tanpa magnetometer).
+  /// Dipakai supaya spinner tidak berputar selamanya.
+  bool _sensorWebKosong = false;
+  Timer? _penungguSensorWeb;
+
   // Koordinat mutlak Ka'bah (Mekah)
   final double _kaabaLat = 21.422487;
   final double _kaabaLon = 39.826206;
@@ -44,36 +56,64 @@ class _QiblaScreenState extends State<QiblaScreen> {
     _initializeQibla();
 
     // Listener tambahan KHUSUS untuk pergerakan AR.
+    //
     // Di web, FlutterCompass tidak punya implementasi sehingga stream-nya
-    // error; onError dipasang supaya errornya tidak jadi unhandled exception.
-    FlutterCompass.events?.listen(
-      (event) {
-        if (mounted) {
-          setState(() {
-            _heading = event.heading;
-          });
+    // tidak ada; onError dipasang supaya errornya tidak jadi unhandled
+    // exception. Arah kompas di web dibaca dari sensor peramban — lihat
+    // [WebCompass] dan `_buildCompassWeb()`.
+    if (!kIsWeb) {
+      FlutterCompass.events?.listen(
+        (event) {
+          if (mounted) {
+            setState(() {
+              _heading = event.heading;
+            });
+          }
+        },
+        onError: (Object error) {
+          debugPrint('Sensor kompas tidak tersedia: $error');
+        },
+      );
+    } else if (WebCompass.perambanHp) {
+      // Sensor peramban bisa saja tidak ada. Kalau dalam 6 detik tidak ada
+      // data, tampilkan pesan yang jelas daripada spinner berputar terus.
+      _penungguSensorWeb = Timer(const Duration(seconds: 6), () {
+        if (mounted && WebCompass.arahTerakhir == null) {
+          setState(() => _sensorWebKosong = true);
         }
-      },
-      onError: (Object error) {
-        debugPrint('Sensor kompas tidak tersedia: $error');
-      },
-    );
+      });
+    }
   }
 
   @override
   void dispose() {
     // Wajib: Matikan kamera saat pindah halaman agar baterai tidak boros
     _cameraController?.dispose();
+    _penungguSensorWeb?.cancel();
     super.dispose();
   }
 
   /// Pesan yang tampil ketika sensor kompas tidak bisa dipakai.
   ///
-  /// Di browser, FlutterCompass memang tidak punya implementasi, jadi
-  /// pesannya dibedakan supaya user tidak bingung kenapa arah kiblat mati.
+  /// Di browser pesannya dibedakan supaya user tidak bingung kenapa arah
+  /// kiblat mati, padahal di HP bisa jalan.
   Widget _buildSensorUnavailable(BuildContext context, String fallbackText) {
-    final isWebBrowser = kIsWeb;
+    return _buildKotakInfo(
+      ikon: Icons.explore_off_outlined,
+      judul: kIsWeb ? 'Kompas tidak tersedia di peramban ini' : fallbackText,
+      pesan: kIsWeb
+          ? 'Buka halaman ini dari HP Android (Chrome) atau iPhone (Safari) '
+                'supaya arah kiblat bisa dibaca otomatis.'
+          : 'Perangkatmu belum mendukung sensor kompas.',
+    );
+  }
 
+  /// Kotak pesan di tengah layar: ikon + judul + keterangan.
+  Widget _buildKotakInfo({
+    required IconData ikon,
+    required String judul,
+    required String pesan,
+  }) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -81,13 +121,13 @@ class _QiblaScreenState extends State<QiblaScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.explore_off_outlined,
+              ikon,
               size: 48,
               color: AppColors.getGoldLeaf(context).withValues(alpha: 0.8),
             ),
             const SizedBox(height: 14),
             Text(
-              isWebBrowser ? 'Kompas tidak tersedia di browser' : fallbackText,
+              judul,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,
@@ -97,10 +137,7 @@ class _QiblaScreenState extends State<QiblaScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              isWebBrowser
-                  ? 'Fitur arah kiblat membutuhkan sensor kompas HP. '
-                        'Silakan buka lewat aplikasi Android/iOS.'
-                  : 'Perangkatmu belum mendukung sensor kompas.',
+              pesan,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
@@ -112,6 +149,26 @@ class _QiblaScreenState extends State<QiblaScreen> {
         ),
       ),
     );
+  }
+
+  /// Meminta izin sensor kompas peramban (wajib di iOS 13+).
+  Future<void> _mintaIzinSensorWeb() async {
+    final bool disetujui = await WebCompass.mintaIzin();
+    if (!mounted) return;
+
+    if (!disetujui) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Izin sensor ditolak. Arah kiblat tidak bisa dibaca otomatis.',
+          ),
+          backgroundColor: AppColors.getSurfaceVariant(context),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _izinSensorWeb = true);
   }
 
   // --- FUNGSI MENGHIDUPKAN/MEMATIKAN KAMERA AR ---
@@ -482,7 +539,10 @@ class _QiblaScreenState extends State<QiblaScreen> {
     );
   }
 
-  Widget _buildCompass() {
+  /// Bingkai bulat tempat piringan kompas digambar.
+  ///
+  /// Dipakai versi HP maupun versi web supaya tampilannya persis sama.
+  Widget _bingkaiKompas(Widget isi) {
     return Center(
       child: Container(
         width: 320,
@@ -505,209 +565,323 @@ class _QiblaScreenState extends State<QiblaScreen> {
             ),
           ],
         ),
-        child: StreamBuilder<CompassEvent>(
-          stream: FlutterCompass.events,
-          builder: (context, snapshot) {
-            if (snapshot.hasError)
-              return _buildSensorUnavailable(context, 'Sensor Error');
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.getGoldLeaf(context),
-                ), // 👈 UBAH
-              );
-            }
+        child: isi,
+      ),
+    );
+  }
 
-            double? deviceHeading = snapshot.data?.heading;
-            if (deviceHeading == null)
-              return _buildSensorUnavailable(
-                context,
-                'Sensor Kompas Tidak Didukung',
-              );
+  /// Kompas versi HP (Android/iOS) — memakai paket `flutter_compass`.
+  Widget _buildCompass() {
+    if (kIsWeb) return _buildCompassWeb();
 
-            double compassRotationRad = -deviceHeading * (math.pi / 180);
-            double qiblaRotationRad = _qiblaDirection * (math.pi / 180);
+    return _bingkaiKompas(
+      StreamBuilder<CompassEvent>(
+        stream: FlutterCompass.events,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _buildSensorUnavailable(context, 'Sensor Error');
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(
+              child: CircularProgressIndicator(
+                color: AppColors.getGoldLeaf(context),
+              ), // 👈 UBAH
+            );
+          }
 
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                Transform.rotate(
-                  angle: compassRotationRad,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        width: 250,
-                        height: 250,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.getSurfaceVariant(
-                              context,
-                            ), // 👈 UBAH
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                      _buildRotatedSquare(0),
-                      _buildRotatedSquare(math.pi / 6),
-                      _buildRotatedSquare(math.pi / 3),
+          final double? deviceHeading = snapshot.data?.heading;
+          if (deviceHeading == null) {
+            return _buildSensorUnavailable(
+              context,
+              'Sensor Kompas Tidak Didukung',
+            );
+          }
 
-                      Positioned(
-                        top: 35,
-                        child: Text(
-                          'U',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                            color: AppColors.getGoldLeaf(context), // 👈 UBAH
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 35,
-                        child: Text(
-                          'S',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: AppColors.getOnSurfaceVariant(
-                              context,
-                            ), // 👈 UBAH
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        right: 35,
-                        child: Text(
-                          'T',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: AppColors.getOnSurfaceVariant(
-                              context,
-                            ), // 👈 UBAH
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        left: 35,
-                        child: Text(
-                          'B',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
-                            color: AppColors.getOnSurfaceVariant(
-                              context,
-                            ), // 👈 UBAH
-                          ),
-                        ),
-                      ),
+          return _buildPiringanKompas(deviceHeading);
+        },
+      ),
+    );
+  }
 
-                      Transform.rotate(
-                        angle: qiblaRotationRad,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                color: AppColors.getSurfaceContainerLow(
-                                  context,
-                                ), // 👈 UBAH
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: AppColors.getGoldLeaf(
-                                    context,
-                                  ), // 👈 UBAH
-                                  width: 3,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.getGoldLeaf(
-                                      context,
-                                    ).withOpacity(0.3), // 👈 UBAH
-                                    blurRadius: 15,
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                Icons.location_on,
-                                color: AppColors.getGoldLeaf(
-                                  context,
-                                ), // 👈 UBAH
-                                size: 24,
-                              ),
-                            ),
-                            Container(
-                              width: 3,
-                              height: 90,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    AppColors.getGoldLeaf(context), // 👈 UBAH
-                                    AppColors.getGoldLeaf(
-                                      context,
-                                    ).withOpacity(0.0), // 👈 UBAH
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                            const SizedBox(height: 134),
-                          ],
-                        ),
-                      ),
-                    ],
+  /// Kompas versi web.
+  ///
+  /// `flutter_compass` tidak punya implementasi web, jadi arah dibaca langsung
+  /// dari sensor peramban lewat [WebCompass]. Hanya jalan kalau halaman dibuka
+  /// dari HP — laptop/PC tidak punya sensor kompas.
+  Widget _buildCompassWeb() {
+    if (!WebCompass.perambanHp) {
+      return _buildKotakInfo(
+        ikon: Icons.desktop_windows_outlined,
+        judul: 'Kompas hanya tersedia di HP',
+        pesan:
+            'Buka halaman ini dari HP Android atau iPhone untuk memakai '
+            'penunjuk arah kiblat. Laptop/PC tidak punya sensor kompas.',
+      );
+    }
+
+    if (!WebCompass.tersedia) {
+      return _buildKotakInfo(
+        ikon: Icons.explore_off_outlined,
+        judul: 'Peramban tidak mendukung sensor',
+        pesan:
+            'Peramban ini tidak menyediakan data sensor orientasi. Coba buka '
+            'dengan Google Chrome atau Safari.',
+      );
+    }
+
+    // iOS 13+ wajib meminta izin lewat aksi user.
+    if (WebCompass.perluIzin && !_izinSensorWeb) {
+      return Column(
+        children: [
+          _buildKotakInfo(
+            ikon: Icons.screen_rotation_outlined,
+            judul: 'Izinkan Akses Sensor',
+            pesan: 'iPhone meminta izin dulu sebelum arah kompas bisa dibaca.',
+          ),
+          const SizedBox(height: 18),
+          ElevatedButton.icon(
+            onPressed: _mintaIzinSensorWeb,
+            icon: const Icon(Icons.sensors, size: 20),
+            label: const Text('Aktifkan Sensor Kompas'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.getGoldLeaf(context),
+              foregroundColor: const Color(0xFF00120B),
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (_sensorWebKosong) {
+      return _buildKotakInfo(
+        ikon: Icons.explore_off_outlined,
+        judul: 'Sensor kompas tidak terdeteksi',
+        pesan:
+            'HP ini sepertinya tidak punya sensor magnetometer. Arah kiblat '
+            'tetap bisa dilihat dari angka derajat di bawah.',
+      );
+    }
+
+    return _bingkaiKompas(
+      StreamBuilder<double>(
+        stream: WebCompass.aliran,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _buildSensorUnavailable(context, 'Sensor Error');
+          }
+
+          final double? heading = snapshot.data;
+          if (heading == null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    color: AppColors.getGoldLeaf(context),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Menunggu sensor kompas...',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.getOnSurfaceVariant(context),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Gerakkan HP membentuk angka 8',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.getOnSurfaceVariant(context),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          _penungguSensorWeb?.cancel();
+          return _buildPiringanKompas(heading);
+        },
+      ),
+    );
+  }
+
+  /// Piringan kompas beserta penunjuk arah kiblatnya.
+  ///
+  /// [deviceHeading] = arah yang sedang dihadapi HP (derajat, 0 = Utara).
+  /// Dipakai bersama versi HP ([_buildCompass]) dan versi web
+  /// ([_buildCompassWeb]) supaya gambarnya identik.
+  Widget _buildPiringanKompas(double deviceHeading) {
+    double compassRotationRad = -deviceHeading * (math.pi / 180);
+    double qiblaRotationRad = _qiblaDirection * (math.pi / 180);
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Transform.rotate(
+          angle: compassRotationRad,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 250,
+                height: 250,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.getSurfaceVariant(context), // 👈 UBAH
+                    width: 1,
                   ),
                 ),
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: AppColors.getSurfaceContainerLow(context), // 👈 UBAH
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.getSurfaceVariant(context),
-                    ), // 👈 UBAH
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(
-                          Theme.of(context).brightness == Brightness.dark
-                              ? 0.5
-                              : 0.1,
-                        ),
-                        blurRadius: 10,
-                      ),
-                    ],
+              ),
+              _buildRotatedSquare(0),
+              _buildRotatedSquare(math.pi / 6),
+              _buildRotatedSquare(math.pi / 3),
+
+              Positioned(
+                top: 35,
+                child: Text(
+                  'U',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    color: AppColors.getGoldLeaf(context), // 👈 UBAH
                   ),
-                  child: Center(
-                    child: Container(
-                      width: 10,
-                      height: 10,
+                ),
+              ),
+              Positioned(
+                bottom: 35,
+                child: Text(
+                  'S',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    color: AppColors.getOnSurfaceVariant(context), // 👈 UBAH
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 35,
+                child: Text(
+                  'T',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    color: AppColors.getOnSurfaceVariant(context), // 👈 UBAH
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 35,
+                child: Text(
+                  'B',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    color: AppColors.getOnSurfaceVariant(context), // 👈 UBAH
+                  ),
+                ),
+              ),
+
+              Transform.rotate(
+                angle: qiblaRotationRad,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
                       decoration: BoxDecoration(
-                        color: AppColors.getGoldLeaf(context), // 👈 UBAH
+                        color: AppColors.getSurfaceContainerLow(
+                          context,
+                        ), // 👈 UBAH
                         shape: BoxShape.circle,
+                        border: Border.all(
+                          color: AppColors.getGoldLeaf(context), // 👈 UBAH
+                          width: 3,
+                        ),
                         boxShadow: [
                           BoxShadow(
                             color: AppColors.getGoldLeaf(
                               context,
-                            ).withOpacity(0.5), // 👈 UBAH
-                            blurRadius: 5,
+                            ).withOpacity(0.3), // 👈 UBAH
+                            blurRadius: 15,
                           ),
                         ],
                       ),
+                      child: Icon(
+                        Icons.location_on,
+                        color: AppColors.getGoldLeaf(context), // 👈 UBAH
+                        size: 24,
+                      ),
                     ),
-                  ),
+                    Container(
+                      width: 3,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            AppColors.getGoldLeaf(context), // 👈 UBAH
+                            AppColors.getGoldLeaf(
+                              context,
+                            ).withOpacity(0.0), // 👈 UBAH
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 134),
+                  ],
                 ),
-              ],
-            );
-          },
+              ),
+            ],
+          ),
         ),
-      ),
+        Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            color: AppColors.getSurfaceContainerLow(context), // 👈 UBAH
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: AppColors.getSurfaceVariant(context),
+            ), // 👈 UBAH
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(
+                  Theme.of(context).brightness == Brightness.dark ? 0.5 : 0.1,
+                ),
+                blurRadius: 10,
+              ),
+            ],
+          ),
+          child: Center(
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: AppColors.getGoldLeaf(context), // 👈 UBAH
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.getGoldLeaf(
+                      context,
+                    ).withOpacity(0.5), // 👈 UBAH
+                    blurRadius: 5,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

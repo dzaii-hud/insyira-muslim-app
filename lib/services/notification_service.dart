@@ -35,6 +35,13 @@ class NotificationService {
   static const String azanChannelId = 'azan_channel_v2';
   static const String dzikirChannelId = 'dzikir_channel_v1';
 
+  /// Channel khusus PENGINGAT dzikir pagi & sore.
+  ///
+  /// Sengaja dipisah dari [dzikirChannelId] — yang dipakai untuk kabar
+  /// "kamu baru selesai berdzikir" — supaya pengingat harian bisa dimatikan
+  /// user tanpa ikut mematikan notifikasi penyelesaian dzikir (dan sebaliknya).
+  static const String dzikirReminderChannelId = 'dzikir_reminder_channel_v1';
+
   /// Channel untuk kabar "kajian sedang live".
   ///
   /// Dipisah dari channel adzan supaya user bisa membisukan kabar kajian
@@ -52,6 +59,9 @@ class NotificationService {
   static const String _dzikirChannelName = 'Dzikir Harian';
   static const String _dzikirChannelDesc =
       'Notifikasi setelah kamu menyelesaikan dzikir';
+  static const String _dzikirReminderChannelName = 'Pengingat Dzikir';
+  static const String _dzikirReminderChannelDesc =
+      'Pengingat dzikir pagi (09:00) dan sore (17:00)';
 
   static const String _kajianChannelName = 'Kajian Live';
   static const String _kajianChannelDesc =
@@ -69,6 +79,17 @@ class NotificationService {
   /// ID notifikasi penyelesaian dzikir.
   static const int _dzikirPagiNotificationId = 2101;
   static const int _dzikirSoreNotificationId = 2102;
+
+  /// ID notifikasi PENGINGAT dzikir pagi & sore.
+  static const int _dzikirPagiReminderId = 2103;
+  static const int _dzikirSoreReminderId = 2104;
+
+  /// Jam pengingat dzikir (waktu lokal perangkat).
+  static const int jamDzikirPagi = 9;
+  static const int jamDzikirSore = 17;
+
+  /// Toggle di halaman Pengaturan: pengingat dzikir pagi & sore.
+  static const String _pengingatDzikirKey = 'enable_dzikir_reminder';
 
   /// ID notifikasi kabar kajian live. Sengaja ID tetap (bukan hashCode)
   /// supaya kabar baru menimpa kabar lama, tidak menumpuk di laci notifikasi.
@@ -199,6 +220,18 @@ class NotificationService {
       ),
     );
 
+    // Channel pengingat dzikir: dipisah supaya bisa dibisukan sendiri.
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        dzikirReminderChannelId,
+        _dzikirReminderChannelName,
+        description: _dzikirReminderChannelDesc,
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
+
     // Channel kajian live: pentingnya HIGH (perlu muncul sebagai banner),
     // tapi tanpa suara adzan — cukup getaran + suara notifikasi bawaan.
     await android.createNotificationChannel(
@@ -242,6 +275,33 @@ class NotificationService {
   // ===================================================================
   // NOTIFIKASI ADZAN (JADWAL HARIAN)
   // ===================================================================
+  /// Mengubah [PrayerTimes] menjadi peta `nama waktu -> waktu`, dengan urutan
+  /// waktu sholat (bukan urutan abjad).
+  static Map<String, DateTime> petaWaktuSholat(PrayerTimes t) =>
+      <String, DateTime>{
+        'Subuh': t.fajr,
+        'Dzuhur': t.dhuhr,
+        'Ashar': t.asr,
+        'Maghrib': t.maghrib,
+        'Isya': t.isha,
+      };
+
+  /// Waktu lokal berikutnya pada jam [jam]:[menit] — hari ini kalau belum
+  /// lewat, atau besok kalau sudah lewat.
+  static DateTime waktuLokalBerikutnya(int jam, int menit) {
+    final sekarang = DateTime.now();
+    final hariIni = DateTime(
+      sekarang.year,
+      sekarang.month,
+      sekarang.day,
+      jam,
+      menit,
+    );
+    return hariIni.isAfter(sekarang)
+        ? hariIni
+        : hariIni.add(const Duration(days: 1));
+  }
+
   /// Menjadwalkan adzan untuk 5 waktu sholat.
   ///
   /// Waktu sholat di jadwalkan berulang tiap hari (`DateTimeComponents.time`),
@@ -254,21 +314,19 @@ class NotificationService {
     final enableAzan = prefs.getBool('enable_azan') ?? true;
 
     if (!enableAzan) {
-      await cancelAllNotifications();
+      await cancelAdzanNotifications();
       return;
     }
 
-    // Bersihkan jadwal lama supaya tidak dobel.
-    await _notifications.cancelAll();
+    // Bersihkan jadwal adzan lama supaya tidak dobel.
+    //
+    // ⚠️ JANGAN memakai `cancelAll()` di sini. Fungsi ini dipanggil setiap
+    // kali aplikasi dibuka, dan `cancelAll()` ikut menghapus pengingat
+    // dzikir pagi/sore yang sudah terjadwal (bug yang pernah terjadi).
+    await cancelAdzanNotifications();
 
     final now = DateTime.now();
-    final schedules = <String, DateTime>{
-      'Subuh': prayerTimes.fajr,
-      'Dzuhur': prayerTimes.dhuhr,
-      'Ashar': prayerTimes.asr,
-      'Maghrib': prayerTimes.maghrib,
-      'Isya': prayerTimes.isha,
-    };
+    final schedules = petaWaktuSholat(prayerTimes);
 
     // Simpan supaya bisa dijadwalkan ulang tanpa hitung lokasi lagi
     // (misalnya saat user menyalakan kembali toggle adzan di Pengaturan).
@@ -324,9 +382,25 @@ class NotificationService {
       target = target.add(const Duration(days: 1));
     }
 
-    final scheduledDate = tz.TZDateTime.from(target, tz.local);
+    await _jadwalkanDenganCadangan(
+      id: _prayerNotificationIds[prayerName] ?? prayerName.hashCode,
+      judul: 'Waktu Sholat $prayerName',
+      isi: 'Sudah masuk waktu sholat $prayerName',
+      target: tz.TZDateTime.from(target, tz.local),
+      details: _azanDetails(prayerName),
+      payload: 'prayer:$prayerName',
+      label: 'Adzan $prayerName',
+    );
+  }
 
-    final details = NotificationDetails(
+  /// Detail notifikasi adzan untuk satu waktu sholat.
+  ///
+  /// Dipisah supaya jalur TERJADWAL ([_schedulePrayer]) dan jalur
+  /// "aplikasi sedang dibuka" ([showAdzanNow]) memakai tampilan & suara yang
+  /// persis sama — kalau tidak, adzan bisa terdengar berbeda tergantung
+  /// aplikasi sedang dibuka atau tidak.
+  NotificationDetails _azanDetails(String prayerName) {
+    return NotificationDetails(
       android: AndroidNotificationDetails(
         azanChannelId,
         _azanChannelName,
@@ -356,9 +430,24 @@ class NotificationService {
         interruptionLevel: InterruptionLevel.timeSensitive,
       ),
     );
+  }
 
-    // Urutan mode dari paling tepat waktu sampai paling kompromi.
-    // `alarmClock` = setAlarmClock, paling anti-delay & menembus Doze.
+  /// Menjadwalkan satu notifikasi berulang harian.
+  ///
+  /// Urutan mode dari paling tepat waktu sampai paling kompromi.
+  /// `alarmClock` = setAlarmClock, paling anti-delay & menembus Doze.
+  /// Cadangan diperlukan karena izin "Alarm & pengingat"
+  /// (`SCHEDULE_EXACT_ALARM`) bisa saja belum diberikan user — kalau semua
+  /// mode gagal, itu dicatat di log supaya bisa dilihat lewat `flutter logs`.
+  Future<void> _jadwalkanDenganCadangan({
+    required int id,
+    required String judul,
+    required String isi,
+    required tz.TZDateTime target,
+    required NotificationDetails details,
+    required String label,
+    String? payload,
+  }) async {
     const modes = <AndroidScheduleMode>[
       AndroidScheduleMode.alarmClock,
       AndroidScheduleMode.exactAllowWhileIdle,
@@ -369,30 +458,26 @@ class NotificationService {
     for (final mode in modes) {
       try {
         await _notifications.zonedSchedule(
-          _prayerNotificationIds[prayerName] ?? prayerName.hashCode,
-          'Waktu Sholat $prayerName',
-          'Sudah masuk waktu sholat $prayerName',
-          scheduledDate,
+          id,
+          judul,
+          isi,
+          target,
           details,
           androidScheduleMode: mode,
           matchDateTimeComponents: DateTimeComponents.time,
-          payload: 'prayer:$prayerName',
+          payload: payload,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
         );
-        debugPrint(
-          '[Adzan] $prayerName dijadwalkan ($mode) pada $scheduledDate',
-        );
+        debugPrint('[Notif] $label dijadwalkan ($mode) pada $target');
         return;
       } catch (e) {
         lastError = e;
-        debugPrint('[Adzan] Gagal jadwalkan $prayerName dengan $mode: $e');
+        debugPrint('[Notif] Gagal jadwalkan $label dengan $mode: $e');
       }
     }
 
-    debugPrint(
-      '[Adzan] $prayerName GAGAL dijadwalkan. Error terakhir: $lastError',
-    );
+    debugPrint('[Notif] $label GAGAL dijadwalkan. Error terakhir: $lastError');
   }
 
   /// Pesan kesalahan terakhir saat menampilkan notifikasi tes adzan.
@@ -444,6 +529,162 @@ class NotificationService {
       debugPrint('Gagal menampilkan notifikasi tes adzan: $e');
       return false;
     }
+  }
+
+  // ===================================================================
+  // ADZAN SAAT APLIKASI SEDANG DIBUKA
+  // ===================================================================
+  /// Menampilkan notifikasi adzan SEGERA (tanpa menunggu alarm sistem).
+  ///
+  /// Dipakai Home saat aplikasi sedang dibuka dan waktu sholat baru saja
+  /// masuk. Ini jalur yang membuat adzan tetap berbunyi walaupun alarm
+  /// sistem diblokir oleh penghemat baterai (kebiasaan HP Xiaomi/Oppo/Vivo).
+  ///
+  /// ID notifikasi yang dipakai SAMA dengan jalur terjadwal, jadi keduanya
+  /// tidak menghasilkan dua baris notifikasi.
+  Future<bool> showAdzanNow(String namaWaktu) async {
+    if (!isSupported) return false;
+    try {
+      await init();
+      await _notifications.show(
+        _prayerNotificationIds[namaWaktu] ?? namaWaktu.hashCode,
+        'Waktu Sholat $namaWaktu',
+        'Sudah masuk waktu sholat $namaWaktu',
+        _azanDetails(namaWaktu),
+        payload: 'prayer:$namaWaktu',
+      );
+      debugPrint('[Adzan] $namaWaktu ditampilkan langsung (aplikasi dibuka)');
+      return true;
+    } catch (e) {
+      debugPrint('[Adzan] Gagal menampilkan adzan $namaWaktu: $e');
+      return false;
+    }
+  }
+
+  /// Membatalkan alarm adzan [namaWaktu] yang belum berbunyi.
+  ///
+  /// Dipakai tak lama SEBELUM waktu sholat masuk saat aplikasi sedang dibuka.
+  /// Tujuannya supaya alarm sistem tidak berbunyi bersamaan dengan
+  /// [showAdzanNow] (adzan dua kali di saat yang sama). Rantai jadwal harian
+  /// dipulihkan lagi oleh [jadwalkanUlangAdzan] tepat setelahnya.
+  Future<void> batalkanAdzanTertunda(String namaWaktu) async {
+    if (!isSupported) return;
+    final id = _prayerNotificationIds[namaWaktu];
+    if (id == null) return;
+    await _notifications.cancel(id);
+  }
+
+  /// Menjadwalkan ULANG satu waktu sholat untuk hari berikutnya.
+  ///
+  /// Wajib dipanggil setelah [batalkanAdzanTertunda], kalau tidak jadwal
+  /// hariannya putus dan adzan besok tidak berbunyi.
+  Future<void> jadwalkanUlangAdzan(String namaWaktu) async {
+    if (!isSupported) return;
+    final jadwal = await getSavedPrayerTimes();
+    final waktu = jadwal[namaWaktu];
+    if (waktu == null) return;
+    await _schedulePrayer(namaWaktu, waktu, DateTime.now());
+  }
+
+  /// Apakah adzan [namaWaktu] hari ini sudah pernah berbunyi.
+  ///
+  /// Dipakai supaya jalur "aplikasi sedang dibuka" tidak berbunyi berkali-kali
+  /// untuk waktu sholat yang sama.
+  Future<bool> sudahDiadzankanHariIni(String namaWaktu) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_kunciPenandaAdzan(namaWaktu)) == _tanggalHariIni();
+  }
+
+  /// Mencatat bahwa adzan [namaWaktu] hari ini sudah berbunyi.
+  Future<void> tandaiSudahDiadzankan(String namaWaktu) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kunciPenandaAdzan(namaWaktu), _tanggalHariIni());
+  }
+
+  static String _kunciPenandaAdzan(String namaWaktu) =>
+      'adzan_notified_$namaWaktu';
+
+  static String _tanggalHariIni() {
+    final n = DateTime.now();
+    return '${n.year.toString().padLeft(4, '0')}-'
+        '${n.month.toString().padLeft(2, '0')}-'
+        '${n.day.toString().padLeft(2, '0')}';
+  }
+
+  // ===================================================================
+  // PENGINGAT DZIKIR PAGI & SORE
+  // ===================================================================
+  /// Menjadwalkan ulang pengingat dzikir pagi (09:00) dan sore (17:00).
+  ///
+  /// Aman dipanggil berkali-kali: ID notifikasinya tetap, jadi jadwal lama
+  /// ditimpa jadwal baru (tidak menumpuk di laci notifikasi).
+  Future<void> scheduleDzikirReminders() async {
+    if (!isSupported) return;
+    await init();
+
+    final prefs = await SharedPreferences.getInstance();
+    final aktif = prefs.getBool(_pengingatDzikirKey) ?? true;
+
+    // Selalu bersihkan dulu supaya jadwal lama tidak tertinggal.
+    await _notifications.cancel(_dzikirPagiReminderId);
+    await _notifications.cancel(_dzikirSoreReminderId);
+
+    if (!aktif) {
+      debugPrint('[Dzikir] Pengingat dzikir dimatikan user');
+      return;
+    }
+
+    await _jadwalkanPengingatDzikir(
+      id: _dzikirPagiReminderId,
+      jam: jamDzikirPagi,
+      waktu: 'pagi',
+    );
+    await _jadwalkanPengingatDzikir(
+      id: _dzikirSoreReminderId,
+      jam: jamDzikirSore,
+      waktu: 'sore',
+    );
+  }
+
+  Future<void> _jadwalkanPengingatDzikir({
+    required int id,
+    required int jam,
+    required String waktu,
+  }) async {
+    final target = tz.TZDateTime.from(waktuLokalBerikutnya(jam, 0), tz.local);
+
+    await _jadwalkanDenganCadangan(
+      id: id,
+      judul: 'Pengingat Dzikir ${waktu[0].toUpperCase()}${waktu.substring(1)}',
+      isi: 'Sudahkah Anda berdzikir $waktu hari ini?',
+      target: target,
+      details: NotificationDetails(
+        android: AndroidNotificationDetails(
+          dzikirReminderChannelId,
+          _dzikirReminderChannelName,
+          channelDescription: _dzikirReminderChannelDesc,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+          category: AndroidNotificationCategory.reminder,
+          ticker: 'Pengingat dzikir $waktu',
+          styleInformation: BigTextStyleInformation(
+            'Sudahkah Anda berdzikir $waktu hari ini?\n\n'
+            'Luangkan beberapa menit untuk membaca dzikir $waktu — '
+            'insyaAllah hati jadi lebih tenang.',
+          ),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBanner: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.active,
+        ),
+      ),
+      payload: 'dzikir_reminder:$waktu',
+      label: 'Pengingat dzikir $waktu',
+    );
   }
 
   // ===================================================================
@@ -613,6 +854,103 @@ class NotificationService {
     await _notifications.cancelAll();
   }
 
+  /// Membatalkan HANYA notifikasi adzan (5 waktu sholat).
+  ///
+  /// ⚠️ Jangan kembali memakai `cancelAll()` di jalur penjadwalan adzan:
+  /// fungsi itu ikut menghapus pengingat dzikir dan notifikasi terjadwal lain.
+  Future<void> cancelAdzanNotifications() async {
+    if (!isSupported) return;
+    for (final id in _prayerNotificationIds.values) {
+      await _notifications.cancel(id);
+    }
+  }
+
+  /// Meminta izin \"Alarm & pengingat\" (`SCHEDULE_EXACT_ALARM`).
+  ///
+  /// Tanpa izin ini adzan tetap dijadwalkan, tetapi memakai mode inexact
+  /// sehingga waktunya bisa tertunda beberapa menit — dan di HP dengan
+  /// penghemat baterai agresif bisa tidak berbunyi sama sekali.
+  Future<void> mintaIzinAlarmPresisi() async {
+    if (!isSupported) return;
+    try {
+      final android = _notifications
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await android?.requestExactAlarmsPermission();
+    } catch (e) {
+      debugPrint('Gagal meminta izin alarm presisi: $e');
+    }
+  }
+
+  /// Ringkasan kesiapan notifikasi untuk halaman Pengaturan.
+  ///
+  /// Dibuat supaya masalah "adzan tidak pernah berbunyi" bisa dilihat
+  /// penyebabnya dari dalam aplikasi: izin notifikasi, izin alarm presisi,
+  /// dan berapa alarm yang benar-benar terdaftar di sistem.
+  Future<NotificationStatus> getStatus() async {
+    if (!isSupported) {
+      return const NotificationStatus(
+        didukung: false,
+        izinNotifikasi: false,
+        izinAlarmPresisi: false,
+        jumlahAdzanTerjadwal: 0,
+        adzanBerikutnya: null,
+        pengingatDzikirAktif: false,
+      );
+    }
+
+    await init();
+
+    final android = _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+
+    bool izinNotifikasi = true;
+    bool izinAlarmPresisi = true;
+    try {
+      izinNotifikasi = await android?.areNotificationsEnabled() ?? true;
+      izinAlarmPresisi = await android?.canScheduleExactNotifications() ?? true;
+    } catch (e) {
+      debugPrint('Gagal membaca status izin notifikasi: $e');
+    }
+
+    List<PendingNotificationRequest> tertunda;
+    try {
+      tertunda = await _notifications.pendingNotificationRequests();
+    } catch (e) {
+      debugPrint('Gagal membaca daftar notifikasi tertunda: $e');
+      tertunda = const <PendingNotificationRequest>[];
+    }
+
+    final idAdzan = _prayerNotificationIds.values.toSet();
+    final adzanTerjadwal = tertunda.where((n) => idAdzan.contains(n.id)).length;
+
+    final prefs = await SharedPreferences.getInstance();
+    final jadwal = await getSavedPrayerTimes();
+    final sekarang = DateTime.now();
+    DateTime? berikutnya;
+    for (final waktu in jadwal.values) {
+      final kandidat = waktu.isAfter(sekarang)
+          ? waktu
+          : waktu.add(const Duration(days: 1));
+      if (berikutnya == null || kandidat.isBefore(berikutnya)) {
+        berikutnya = kandidat;
+      }
+    }
+
+    return NotificationStatus(
+      didukung: true,
+      izinNotifikasi: izinNotifikasi,
+      izinAlarmPresisi: izinAlarmPresisi,
+      jumlahAdzanTerjadwal: adzanTerjadwal,
+      adzanBerikutnya: berikutnya,
+      pengingatDzikirAktif: prefs.getBool(_pengingatDzikirKey) ?? true,
+      jumlahNotifikasiTertunda: tertunda.length,
+    );
+  }
+
   /// Info buat debugging: daftar notifikasi yang masih menunggu di sistem.
   Future<List<PendingNotificationRequest>> pendingNotifications() async {
     if (!isSupported) return const [];
@@ -625,4 +963,41 @@ class NotificationService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_prayerTimesKey) != null;
   }
+}
+
+/// Ringkasan kesiapan notifikasi — lihat [NotificationService.getStatus].
+class NotificationStatus {
+  const NotificationStatus({
+    required this.didukung,
+    required this.izinNotifikasi,
+    required this.izinAlarmPresisi,
+    required this.jumlahAdzanTerjadwal,
+    required this.adzanBerikutnya,
+    required this.pengingatDzikirAktif,
+    this.jumlahNotifikasiTertunda = 0,
+  });
+
+  /// Notifikasi lokal memang tersedia di perangkat ini (bukan web).
+  final bool didukung;
+
+  /// Izin menampilkan notifikasi (Android 13+ / POST_NOTIFICATIONS).
+  final bool izinNotifikasi;
+
+  /// Izin \"Alarm & pengingat\". Tanpa izin ini adzan tetap dijadwalkan, tetapi
+  /// memakai mode inexact sehingga waktunya bisa tertunda beberapa menit.
+  final bool izinAlarmPresisi;
+
+  /// Berapa waktu sholat yang alarmnya benar-benar terdaftar di sistem.
+  final int jumlahAdzanTerjadwal;
+
+  /// Perkiraan waktu sholat berikutnya menurut jadwal yang tersimpan.
+  final DateTime? adzanBerikutnya;
+
+  final bool pengingatDzikirAktif;
+
+  /// Total notifikasi yang masih menunggu di sistem (adzan + pengingat).
+  final int jumlahNotifikasiTertunda;
+
+  /// Adzan sudah terpasang dan izinnya lengkap.
+  bool get siap => didukung && izinNotifikasi && jumlahAdzanTerjadwal > 0;
 }

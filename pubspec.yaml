@@ -35,6 +35,11 @@ dependencies:
   google_sign_in: ^6.2.1
   sign_in_with_apple: ^6.1.2
   go_router: ^17.5.0
+  # Dipakai HANYA oleh implementasi kompas peramban
+  # (`lib/services/web_compass_web.dart`) — fitur arah kiblat di web untuk HP.
+  # `flutter_compass` tidak punya implementasi web, jadi sensor dibaca langsung
+  # lewat API `deviceorientation`.
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

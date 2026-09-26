@@ -19,7 +19,22 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <!--
+    interactive-widget=resizes-content WAJIB ada.
+
+    Di peramban HP, membuka papan keyboard mengubah tinggi tampilan. Perilaku
+    bawaan Chrome Android (resizes-visual) membuat papan keyboard MENIMPA
+    halaman, sedangkan peramban lain (MIUI, Samsung Internet, Chrome lama)
+    justru MENYUSUTKAN halaman. Dua perilaku berbeda ini yang membuat kanvas
+    aplikasi bisa tertinggal kecil setelah keyboard ditutup — bagian bawah
+    halaman jadi kosong dan tidak kembali sendiri.
+
+    Dengan resizes-content, halaman selalu menyusut saat keyboard muncul
+    (jadi kolom isian tetap kelihatan) dan kembali penuh saat keyboard
+    ditutup.
+  -->
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover, interactive-widget=resizes-content">
 
   <meta name="description"
     content="Insyira Muslim App — jadwal sholat, arah kiblat, Al-Quran, dzikir harian, fawaidh asatidz, dan jadwal kajian dalam satu aplikasi.">
@@ -36,6 +51,21 @@
 
   <title>Insyira Muslim App</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /*
+      Tinggi halaman dikunci ke ukuran layar dan halaman TIDAK boleh ikut
+      tergeser. Kalau halaman ikut tergeser saat keyboard muncul, kanvas
+      aplikasi ikut naik dan bagian bawahnya menyisakan area kosong.
+    */
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+  </style>
 </head>
 
 <body>
@@ -97,6 +127,52 @@
       splash.style.opacity = '0';
       setTimeout(function () { splash.remove(); }, 320);
     });
+
+    // ==== Perbaikan "halaman terpotong setelah keyboard HP muncul" ====
+    //
+    // Mesin Flutter mengukur ulang ukuran layar dari event `resize` milik
+    // `window.visualViewport`. Sayangnya di beberapa peramban HP event itu
+    // tidak dikirim saat keyboard ditutup, sehingga kanvas aplikasi tertinggal
+    // setinggi saat keyboard masih terbuka: bagian bawah halaman jadi kosong
+    // dan tidak bisa kembali sendiri.
+    //
+    // Solusinya: setiap kali ukuran area tampilan berubah — atau setelah kolom
+    // isian kehilangan fokus (papan keyboard ditutup) — kita kirim ulang sinyal
+    // `resize` supaya Flutter mengukur ulang.
+    (function () {
+      var raf = null;
+
+      function ukurUlang() {
+        if (raf) cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(function () {
+          var vv = window.visualViewport;
+          if (vv) {
+            vv.dispatchEvent(new Event('resize'));
+          }
+          window.dispatchEvent(new Event('resize'));
+        });
+      }
+
+      var vv = window.visualViewport;
+      if (vv) {
+        vv.addEventListener('resize', ukurUlang);
+        // Halaman bisa ikut tergeser supaya kolom isian kelihatan; saat
+        // geseran itu pulih, ukuran perlu dihitung ulang.
+        vv.addEventListener('scroll', ukurUlang);
+      }
+
+      // Papan keyboard biasanya baru benar-benar tertutup beberapa ratus
+      // milidetik setelah kolom isian kehilangan fokus.
+      window.addEventListener('focusout', function () {
+        setTimeout(ukurUlang, 60);
+        setTimeout(ukurUlang, 350);
+        setTimeout(ukurUlang, 900);
+      });
+
+      window.addEventListener('orientationchange', function () {
+        setTimeout(ukurUlang, 250);
+      });
+    })();
   </script>
 
   <script src="flutter_bootstrap.js" async></script>

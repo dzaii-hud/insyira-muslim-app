@@ -104,6 +104,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// berkali-kali oleh timer 1 detik.
   bool _sedangMuatUlangJadwal = false;
 
+  /// Toleransi adzan jalur "aplikasi sedang dibuka".
+  ///
+  /// Adzan hanya dibunyikan sendiri kalau waktunya baru saja lewat — bukan
+  /// berjam-jam kemudian saat user kebetulan membuka aplikasi.
+  static const Duration _toleransiAdzan = Duration(minutes: 15);
+
+  /// Sejak kapan aplikasi berada di depan (dipakai user).
+  ///
+  /// Dipakai supaya adzan jalur "aplikasi dibuka" hanya berbunyi kalau waktu
+  /// sholat benar-benar masuk SAAT aplikasi sedang dipakai, bukan karena user
+  /// membuka aplikasi sesaat setelah adzan sudah lewat.
+  DateTime _sejakKapanDiDepan = DateTime.now();
+
+  /// Waktu sholat yang sudah ditangani jalur "aplikasi sedang dibuka" hari ini.
+  /// Dikosongkan kembali setiap kali tanggal berganti.
+  final Set<String> _adzanSudahDikirim = <String>{};
+
   // ====== VARIABEL MEMORI BACAAN ======
   String? lastReadSurah;
   int? lastReadSurahNumber;
@@ -144,6 +161,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _selectedIndex = widget.initialTab.clamp(0, kNavDestinations.length - 1);
     WidgetsBinding.instance.addObserver(this);
     _notificationService.init();
+
+    // Pengingat dzikir pagi (09:00) & sore (17:00). Aman dipanggil berkali-kali
+    // karena ID notifikasinya tetap, jadi jadwalnya hanya ditimpa.
+    _notificationService.scheduleDzikirReminders();
+
     _getLocationAndPrayerTimes();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -343,6 +365,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Aplikasi baru dipakai lagi: mulai hitungan "waktu sholat masuk saat
+      // aplikasi dipakai" dari titik ini, bukan dari sebelumnya.
+      _sejakKapanDiDepan = DateTime.now();
+      _notificationService.scheduleDzikirReminders();
       if (_locationName == "GPS belum aktif" ||
           _locationName == "Izin lokasi ditolak") {
         _getLocationAndPrayerTimes();
@@ -534,6 +560,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _hitungSholatBerikutnya();
         _activePrayer = _getPrayerName(jadwalBaru.currentPrayer());
       });
+      // Hari baru: penjaga adzan harian dikosongkan lagi.
+      _adzanSudahDikirim.clear();
       await _notificationService.schedulePrayerNotifications(jadwalBaru);
     } finally {
       _sedangMuatUlangJadwal = false;
@@ -549,6 +577,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       unawaited(_muatUlangJadwalSholat());
       return;
     }
+
+    // Adzan jalur "aplikasi sedang dibuka".
+    _cekAdzanSaatAplikasiDibuka(sekarang);
 
     final target = _waktuSholatBerikutnya;
     if (target == null) return;
@@ -575,6 +606,54 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() {
       _countdownText = "$hours:$minutes:$seconds";
     });
+  }
+
+  /// Membunyikan adzan sendiri saat aplikasi sedang dibuka.
+  ///
+  /// Kenapa perlu: alarm sistem (`flutter_local_notifications`) bisa diblokir
+  /// penghemat baterai HP (kebiasaan Xiaomi/HyperOS, Oppo, Vivo), sehingga
+  /// adzan tidak pernah berbunyi walaupun aplikasi sedang dibuka dan waktunya
+  /// sudah masuk. Timer 1 detik yang sudah ada di halaman ini dipakai untuk
+  /// memastikan adzan tetap berbunyi.
+  ///
+  /// Syaratnya dua: waktu sholat harus masuk SAAT aplikasi sudah dipakai
+  /// ([_sejakKapanDiDepan]), dan tidak lebih lama dari [_toleransiAdzan].
+  void _cekAdzanSaatAplikasiDibuka(DateTime sekarang) {
+    if (!NotificationService.isSupported) return;
+
+    final jadwal = _prayerTimes;
+    if (jadwal == null) return;
+
+    for (final entry in NotificationService.petaWaktuSholat(jadwal).entries) {
+      final nama = entry.key;
+      final waktu = entry.value;
+
+      // Pemeriksaan murah dulu, supaya timer 1 detik tidak memicu pekerjaan
+      // async setiap detik.
+      if (waktu.isBefore(_sejakKapanDiDepan)) continue;
+      final selisih = sekarang.difference(waktu);
+      if (selisih.isNegative || selisih > _toleransiAdzan) continue;
+      if (_adzanSudahDikirim.contains(nama)) continue;
+
+      _adzanSudahDikirim.add(nama);
+      unawaited(_kirimAdzanSekarang(nama));
+    }
+  }
+
+  Future<void> _kirimAdzanSekarang(String nama) async {
+    try {
+      if (!await _notificationService.isAzanEnabled()) return;
+      if (await _notificationService.sudahDiadzankanHariIni(nama)) return;
+
+      // Alarm sistem dibatalkan dulu supaya tidak berbunyi dua kali di saat
+      // yang hampir bersamaan, lalu jadwalnya dipulihkan untuk besok.
+      await _notificationService.batalkanAdzanTertunda(nama);
+      await _notificationService.showAdzanNow(nama);
+      await _notificationService.tandaiSudahDiadzankan(nama);
+      await _notificationService.jadwalkanUlangAdzan(nama);
+    } catch (e) {
+      debugPrint('Gagal mengirim adzan $nama: $e');
+    }
   }
 
   String _getPrayerName(Prayer prayer) {

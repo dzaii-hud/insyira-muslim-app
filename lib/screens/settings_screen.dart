@@ -1,6 +1,7 @@
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
 import '../router/app_router.dart';
@@ -20,7 +21,13 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _isDarkMode = true;
   bool _enableAzan = true;
+  bool _pengingatDzikir = true;
   final NotificationService _notificationService = NotificationService();
+
+  /// Ringkasan kesiapan notifikasi (izin, jumlah alarm terdaftar, adzan
+  /// berikutnya). Dipakai untuk menampilkan [NotificationStatus] di UI supaya
+  /// masalah "adzan tidak berbunyi" bisa dilihat penyebabnya dari sini.
+  NotificationStatus? _statusNotifikasi;
 
   // ===== AKUN =====
   final AuthService _authService = AuthService();
@@ -41,7 +48,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
     _loadAccount();
     _notificationService.init();
+    _loadStatusNotifikasi();
     _setupAdzanPlayer();
+  }
+
+  /// Membaca ulang kesiapan notifikasi (izin + alarm yang terdaftar).
+  Future<void> _loadStatusNotifikasi() async {
+    try {
+      final status = await _notificationService.getStatus();
+      if (!mounted) return;
+      setState(() => _statusNotifikasi = status);
+    } catch (e) {
+      debugPrint('Gagal memuat status notifikasi: $e');
+    }
   }
 
   // ===================== AKUN & LOGOUT =====================
@@ -188,6 +207,197 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// Kartu ringkasan kesiapan notifikasi.
+  ///
+  /// Dibuat karena keluhan "adzan tidak pernah berbunyi" sulit ditelusuri
+  /// kalau aplikasi tidak pernah memberi tahu statusnya. Semua penyebab umum
+  /// ditampilkan di sini: izin notifikasi, izin alarm presisi, dan berapa
+  /// alarm adzan yang benar-benar terdaftar di sistem.
+  Widget _buildKartuStatusNotifikasi() {
+    if (!NotificationService.isSupported) return const SizedBox.shrink();
+
+    final NotificationStatus? status = _statusNotifikasi;
+    if (status == null) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.getGoldLeaf(context),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Memeriksa status notifikasi...',
+              style: TextStyle(
+                color: AppColors.getOnSurfaceVariant(context),
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final bool adzanTerpasang = status.jumlahAdzanTerjadwal > 0;
+    final bool semuaBeres =
+        status.izinNotifikasi && status.izinAlarmPresisi && adzanTerpasang;
+
+    final String? waktuBerikutnya = status.adzanBerikutnya == null
+        ? null
+        : '${status.adzanBerikutnya!.hour.toString().padLeft(2, '0')}:'
+              '${status.adzanBerikutnya!.minute.toString().padLeft(2, '0')}';
+
+    Widget baris({
+      required String label,
+      required String nilai,
+      required bool baik,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              baik ? Icons.check_circle_rounded : Icons.error_rounded,
+              size: 18,
+              color: baik ? const Color(0xFF4CAF50) : const Color(0xFFE57373),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.getTextPrimary(context),
+                    ),
+                  ),
+                  Text(
+                    nilai,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: AppColors.getOnSurfaceVariant(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.health_and_safety_outlined,
+                color: AppColors.getGoldLeaf(context),
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Status Notifikasi',
+                style: TextStyle(
+                  color: AppColors.getTextPrimary(context),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          baris(
+            label: 'Izin notifikasi',
+            nilai: status.izinNotifikasi
+                ? 'Aktif'
+                : 'BELUM aktif — notifikasi tidak akan muncul',
+            baik: status.izinNotifikasi,
+          ),
+          baris(
+            label: 'Izin alarm presisi',
+            nilai: status.izinAlarmPresisi
+                ? 'Aktif — adzan tepat waktu'
+                : 'Belum aktif — adzan bisa tertunda beberapa menit',
+            baik: status.izinAlarmPresisi,
+          ),
+          baris(
+            label: 'Alarm adzan terdaftar',
+            nilai: adzanTerpasang
+                ? '${status.jumlahAdzanTerjadwal} dari 5 waktu sholat'
+                : 'Belum ada — buka halaman Home sekali supaya jadwal dihitung',
+            baik: adzanTerpasang,
+          ),
+          if (waktuBerikutnya != null)
+            baris(
+              label: 'Adzan berikutnya',
+              nilai: 'Perkiraan pukul $waktuBerikutnya',
+              baik: true,
+            ),
+
+          if (!status.izinNotifikasi || !status.izinAlarmPresisi)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (!status.izinNotifikasi)
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await openAppSettings();
+                        await _loadStatusNotifikasi();
+                      },
+                      icon: const Icon(Icons.settings_outlined, size: 18),
+                      label: const Text('Buka Pengaturan Notifikasi'),
+                    ),
+                  if (!status.izinAlarmPresisi)
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        await _notificationService.mintaIzinAlarmPresisi();
+                        await _loadStatusNotifikasi();
+                      },
+                      icon: const Icon(Icons.alarm_on_outlined, size: 18),
+                      label: const Text('Izinkan Alarm Presisi'),
+                    ),
+                ],
+              ),
+            ),
+
+          // Petunjuk terakhir kalau semua izin sudah benar tapi adzan tetap
+          // tidak berbunyi — ini penyebab yang paling sering di HP Xiaomi,
+          // Oppo, dan Vivo.
+          if (semuaBeres)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                'Adzan masih tidak berbunyi? Buka Pengaturan HP > Aplikasi > '
+                'Insyira Muslim App > Baterai, lalu pilih "Tanpa batasan" '
+                '(matikan penghemat baterai). Sambil aplikasi dibuka, adzan '
+                'tetap dibunyikan sendiri oleh aplikasi.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  height: 1.5,
+                  color: AppColors.getOnSurfaceVariant(context),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _testAdzanNotification() async {
     // Bedakan "izin notifikasi belum aktif" dari "gagal menampilkan".
     // Dulu status izin diabaikan, jadi pesan yang muncul selalu "gagal"
@@ -269,7 +479,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _isDarkMode = prefs.getBool('is_dark_mode') ?? true;
       _enableAzan = prefs.getBool('enable_azan') ?? true;
+      _pengingatDzikir = prefs.getBool('enable_dzikir_reminder') ?? true;
     });
+  }
+
+  /// Menyalakan/mematikan pengingat dzikir pagi (09:00) & sore (17:00).
+  Future<void> _togglePengingatDzikir(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enable_dzikir_reminder', value);
+    if (mounted) setState(() => _pengingatDzikir = value);
+
+    await _notificationService.scheduleDzikirReminders();
+    await _loadStatusNotifikasi();
+
+    if (!mounted) return;
+    _showSnackBar(
+      value
+          ? 'Pengingat dzikir pagi & sore diaktifkan'
+          : 'Pengingat dzikir dimatikan',
+    );
   }
 
   Future<void> _toggleTheme(bool value) async {
@@ -331,12 +559,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     if (!value) {
-      await _notificationService.cancelAllNotifications();
+      // Hanya adzan yang dibatalkan — pengingat dzikir jangan ikut terhapus.
+      await _notificationService.cancelAdzanNotifications();
     } else {
       // Jadwalkan ulang adzan dari jadwal sholat terakhir yang tersimpan,
       // supaya adzan langsung aktif tanpa harus buka halaman Home dulu.
       await _notificationService.rescheduleFromSavedPrayerTimes();
     }
+
+    await _loadStatusNotifikasi();
 
     // Tampilkan SnackBar di atas
     if (mounted) {
@@ -689,6 +920,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         : null,
                     activeThumbColor: AppColors.getGoldLeaf(context),
                   ),
+
+                  Divider(
+                    height: 1,
+                    color: Theme.of(context).dividerColor,
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+
+                  // --- Pengingat dzikir pagi & sore ---
+                  SwitchListTile(
+                    title: Row(
+                      children: [
+                        Icon(
+                          Icons.wb_twilight_rounded,
+                          color: AppColors.getGoldLeaf(context),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Pengingat Dzikir',
+                          style: TextStyle(
+                            color: AppColors.getTextPrimary(context),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      'Notifikasi "sudahkah Anda berdzikir hari ini?" '
+                      'pukul 09:00 (pagi) dan 17:00 (sore)',
+                      style: TextStyle(
+                        color: AppColors.getOnSurfaceVariant(context),
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                    value: _pengingatDzikir,
+                    onChanged: NotificationService.isSupported
+                        ? _togglePengingatDzikir
+                        : null,
+                    activeThumbColor: AppColors.getGoldLeaf(context),
+                  ),
+
+                  Divider(
+                    height: 1,
+                    color: Theme.of(context).dividerColor,
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+
+                  // --- Status kesiapan notifikasi ---
+                  _buildKartuStatusNotifikasi(),
 
                   Divider(
                     height: 1,
