@@ -8,7 +8,12 @@ publish_to: 'none'
 # +5 (22 Sep 2026): perbaikan suara adzan hilang di build rilis (resource shrinker
 # menghapus res/raw/adzan.mp3 — lihat android/app/src/main/res/raw/keep.xml) +
 # hitung mundur "Shalat Selanjutnya" tidak lagi macet di "Memuat..." setelah Isya.
-version: 1.0.0+5
+# +6 (26 Sep 2026): adzan dibunyikan sendiri saat aplikasi sedang dibuka (alarm
+# sistem sering diblokir penghemat baterai), JANGAN pakai cancelAll() di jalur
+# penjadwalan adzan (menghapus pengingat dzikir), pengingat dzikir pagi 09:00 &
+# sore 17:00, kartu Status Notifikasi di Pengaturan, dan kiblat versi web untuk
+# peramban HP.
+version: 1.0.0+6
 
 environment:
   sdk: ^3.10.4
