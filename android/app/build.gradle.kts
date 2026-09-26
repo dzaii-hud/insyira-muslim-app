@@ -77,6 +77,16 @@ android {
                     )
                     signingConfigs.getByName("debug")
                 }
+
+            // ⚠️ JANGAN DIHAPUS.
+            //
+            // Tanpa aturan di `proguard-rules.pro`, R8 membuang atribut
+            // `Signature` yang dibutuhkan Gson di dalam
+            // `flutter_local_notifications`. Akibatnya di build RILIS setiap
+            // penjadwalan & pembatalan notifikasi gagal dengan
+            // "Missing type parameter" — adzan tidak pernah berbunyi, padahal
+            // di build debug normal. Penjelasan lengkap ada di berkas itu.
+            proguardFiles("proguard-rules.pro")
         }
     }
 }

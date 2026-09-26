@@ -571,7 +571,7 @@ class NotificationService {
     if (!isSupported) return;
     final id = _prayerNotificationIds[namaWaktu];
     if (id == null) return;
-    await _notifications.cancel(id);
+    await _cancellAman(id);
   }
 
   /// Menjadwalkan ULANG satu waktu sholat untuk hari berikutnya.
@@ -626,8 +626,8 @@ class NotificationService {
     final aktif = prefs.getBool(_pengingatDzikirKey) ?? true;
 
     // Selalu bersihkan dulu supaya jadwal lama tidak tertinggal.
-    await _notifications.cancel(_dzikirPagiReminderId);
-    await _notifications.cancel(_dzikirSoreReminderId);
+    await _cancellAman(_dzikirPagiReminderId);
+    await _cancellAman(_dzikirSoreReminderId);
 
     if (!aktif) {
       debugPrint('[Dzikir] Pengingat dzikir dimatikan user');
@@ -851,7 +851,26 @@ class NotificationService {
   // ===================================================================
   Future<void> cancelAllNotifications() async {
     if (!isSupported) return;
-    await _notifications.cancelAll();
+    try {
+      await _notifications.cancelAll();
+    } catch (e) {
+      debugPrint('[Notif] Gagal membatalkan semua notifikasi: $e');
+    }
+  }
+
+  /// Membatalkan SATU notifikasi tanpa membuat proses lain ikut gagal.
+  ///
+  /// Ini bukan sekadar kehati-hatian. Pernah kejadian: `cancel()` melempar
+  /// `PlatformException` di build rilis karena bug Gson di dalam plugin (lihat
+  /// `android/app/proguard-rules.pro`). Karena exception-nya dibiarkan naik,
+  /// SELURUH penjadwalan adzan ikut batal dan adzan tidak pernah berbunyi.
+  /// Satu pembatalan yang gagal tidak boleh mematikan fiturnya.
+  Future<void> _cancellAman(int id) async {
+    try {
+      await _notifications.cancel(id);
+    } catch (e) {
+      debugPrint('[Notif] Gagal membatalkan notifikasi $id: $e');
+    }
   }
 
   /// Membatalkan HANYA notifikasi adzan (5 waktu sholat).
@@ -861,7 +880,7 @@ class NotificationService {
   Future<void> cancelAdzanNotifications() async {
     if (!isSupported) return;
     for (final id in _prayerNotificationIds.values) {
-      await _notifications.cancel(id);
+      await _cancellAman(id);
     }
   }
 
