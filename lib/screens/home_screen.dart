@@ -702,6 +702,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     context.push(AppRoutes.settings);
   }
 
+  void _openAbout() {
+    context.push(AppRoutes.about);
+  }
+
   // ===== Fawaidh dibuka sebagai layar baru (bukan tab lagi) =====
   void _openFawaidhScreen() {
     context.push(AppRoutes.fawaidh).then((_) {
@@ -1638,13 +1642,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Text('Insyira Muslim App v1.0.0'),
-                    backgroundColor: AppColors.getSurfaceVariant(context),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
+                _openAbout();
               },
             ),
           ],

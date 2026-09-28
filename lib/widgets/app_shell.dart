@@ -52,6 +52,10 @@ class AppSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color garis = AppColors.getSurfaceVariant(context);
 
+    // Alamat halaman yang sedang dibuka, dipakai untuk menyorot menu tambahan
+    // (Pengaturan / Tentang) sama seperti menu utama menyorot tab aktif.
+    final String jalurSekarang = GoRouterState.of(context).uri.path;
+
     return Container(
       width: kLebarSidebar,
       decoration: BoxDecoration(
@@ -140,14 +144,14 @@ class AppSidebar extends StatelessWidget {
                 _BarisMenu(
                   ikon: Icons.settings_outlined,
                   label: 'Pengaturan',
-                  terpilih: false,
-                  onTap: () => _bukaPengaturan(context),
+                  terpilih: jalurSekarang == AppRoutes.settings,
+                  onTap: () => _bukaHalaman(context, AppRoutes.settings),
                 ),
                 _BarisMenu(
                   ikon: Icons.info_outline,
                   label: 'Tentang',
-                  terpilih: false,
-                  onTap: () => _tampilkanTentang(context),
+                  terpilih: jalurSekarang == AppRoutes.about,
+                  onTap: () => _bukaHalaman(context, AppRoutes.about),
                 ),
               ],
             ),
@@ -157,24 +161,12 @@ class AppSidebar extends StatelessWidget {
     );
   }
 
-  /// Membuka Pengaturan, kecuali kalau halaman ini memang sudah Pengaturan
+  /// Membuka sebuah halaman, kecuali kalau halaman itu memang sudah terbuka
   /// (kalau tidak, halamannya menumpuk dua kali di riwayat).
-  void _bukaPengaturan(BuildContext context) {
-    if (GoRouterState.of(context).uri.path != AppRoutes.settings) {
-      context.push(AppRoutes.settings);
+  void _bukaHalaman(BuildContext context, String jalur) {
+    if (GoRouterState.of(context).uri.path != jalur) {
+      context.push(jalur);
     }
-  }
-
-  void _tampilkanTentang(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Insyira Muslim App v1.0.0'),
-        backgroundColor: AppColors.getSurfaceVariant(context),
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(20),
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 }
 

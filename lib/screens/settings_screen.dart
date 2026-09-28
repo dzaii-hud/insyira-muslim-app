@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../main.dart';
+import '../app_info.dart';
 import '../router/app_router.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
@@ -1192,35 +1193,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 24),
 
-            // Info
+            // Info — kartu ini sekarang membuka halaman Tentang yang lengkap.
             Container(
-              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Theme.of(context).dividerColor),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Tentang',
-                    style: TextStyle(
-                      color: AppColors.getTextPrimary(context),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                onTap: () => context.push(AppRoutes.about),
+                leading: Icon(
+                  Icons.info_outline,
+                  color: AppColors.getGoldLeaf(context),
+                ),
+                title: Text(
+                  'Tentang',
+                  style: TextStyle(
+                    color: AppColors.getTextPrimary(context),
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Insyira Muslim App v1.0.0\nAplikasi panduan ibadah sehari-hari',
-                    style: TextStyle(
-                      color: AppColors.getOnSurfaceVariant(context),
-                      fontSize: 14,
-                      height: 1.5,
-                    ),
+                ),
+                subtitle: Text(
+                  '${AppInfo.nama} v${AppInfo.versi}\n'
+                  'Aplikasi panduan ibadah sehari-hari',
+                  style: TextStyle(
+                    color: AppColors.getOnSurfaceVariant(context),
+                    fontSize: 12,
+                    height: 1.4,
                   ),
-                ],
+                ),
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: AppColors.getOnSurfaceVariant(context),
+                ),
               ),
             ),
           ],

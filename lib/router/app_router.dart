@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../screens/about_screen.dart';
 import '../screens/detail_surah_screen.dart';
 import '../screens/fawaidh_screen.dart';
 import '../screens/home_screen.dart';
@@ -30,6 +31,7 @@ class AppRoutes {
   static const String home = '/home';
   static const String fawaidh = '/fawaidh';
   static const String settings = '/settings';
+  static const String about = '/tentang';
   static const String surah = '/surah';
 
   /// Alamat halaman detail surah.
@@ -110,6 +112,12 @@ final GoRouter appRouter = GoRouter(
       name: 'settings',
       builder: (BuildContext context, GoRouterState state) =>
           const SettingsScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.about,
+      name: 'tentang',
+      builder: (BuildContext context, GoRouterState state) =>
+          const AboutScreen(),
     ),
 
     // Alamat `/surah` tanpa nomor tidak punya arti — kembalikan ke Home
