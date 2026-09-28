@@ -86,6 +86,42 @@ server {
     }
 
     # -----------------------------------------------------------------------
+    # ⚠️ PENGECUALIAN PENTING — font ikon bawaan Flutter.
+    #
+    # `MaterialIcons-Regular.otf` TIDAK BOLEH di-cache lama, walau namanya
+    # tidak pernah berubah. Alasannya:
+    #
+    #   Flutter MEMANGKAS font ini setiap kali build (`--tree-shake-icons`),
+    #   jadi isinya hanya berisi ikon yang benar-benar dipakai di kode.
+    #   Begitu ada ikon baru dipakai, berkas ini ikut berubah — TAPI
+    #   alamatnya tetap sama persis.
+    #
+    # Akibatnya kalau di-cache setahun dengan `immutable` (aturan di atas),
+    # browser TIDAK PERNAH menanyakan lagi ke server. Pengguna akan terus
+    # memakai font versi lama sampai setahun, dan setiap ikon baru muncul
+    # sebagai kotak kosong. Ini benar-benar terjadi (28 Sep 2026): halaman
+    # Tentang tampil, tetapi belasan ikonnya hilang di HP pemilik aplikasi —
+    # padahal di browser yang cache-nya bersih semua ikon tampil normal.
+    # Halaman baru = main.dart.js baru, tetapi font-nya masih yang lama.
+    #
+    # `no-cache` bukan "jangan disimpan": browser tetap menyimpannya, tapi
+    # wajib bertanya dulu. Berkasnya hanya ~24 KB dan server menjawab 304
+    # kalau belum berubah, jadi biayanya nyaris nol.
+    #
+    # `FontManifest.json` ikut di sini karena berkas kecil itulah yang
+    # memberi tahu Flutter nama berkas fontnya.
+    # -----------------------------------------------------------------------
+    location = /assets/fonts/MaterialIcons-Regular.otf {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    location = /assets/FontManifest.json {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # -----------------------------------------------------------------------
     # Aset lain: gambar, audio dzikir, data JSON.
     #
     # 7 hari — cukup menghemat, tapi masih memungkinkan penggantian gambar
