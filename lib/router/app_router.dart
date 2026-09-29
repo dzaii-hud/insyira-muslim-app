@@ -61,6 +61,13 @@ class AppRoutes {
 /// Jumlah surah di Al-Quran — dipakai untuk memvalidasi nomor dari URL.
 const int _jumlahSurah = 114;
 
+/// Kunci navigator global.
+///
+/// Dipakai oleh kode yang berada di LUAR pohon widget — terutama ketika user
+/// menekan sebuah notifikasi — supaya bisa memerintahkan pindah halaman.
+/// Tanpa ini, notifikasi tidak punya cara membuka halaman tertentu.
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
 /// Router utama aplikasi.
 ///
 /// Catatan: aplikasi ini bisa dipakai tanpa login (Mode Tamu), jadi
@@ -68,6 +75,7 @@ const int _jumlahSurah = 114;
 /// [SplashScreen] lewat [AuthService].
 final GoRouter appRouter = GoRouter(
   initialLocation: AppRoutes.splash,
+  navigatorKey: appNavigatorKey,
 
   // Mencetak log navigasi saat mode debug saja — berguna untuk melacak
   // masalah back/forward di web.

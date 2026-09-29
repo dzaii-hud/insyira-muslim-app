@@ -8,6 +8,7 @@ import '../app_info.dart';
 import '../router/app_router.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
+import '../services/streak_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/responsive_content.dart';
@@ -24,7 +25,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _enableAzan = true;
   bool _pengingatDzikir = true;
   bool _pengingatKajian = true;
+  bool _pengingatRuntutan = true;
   final NotificationService _notificationService = NotificationService();
+  final StreakService _streakService = StreakService();
 
   /// Ringkasan kesiapan notifikasi (izin, jumlah alarm terdaftar, adzan
   /// berikutnya). Dipakai untuk menampilkan [NotificationStatus] di UI supaya
@@ -502,6 +505,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _enableAzan = prefs.getBool('enable_azan') ?? true;
       _pengingatDzikir = prefs.getBool('enable_dzikir_reminder') ?? true;
       _pengingatKajian = prefs.getBool('enable_kajian_reminder') ?? true;
+      _pengingatRuntutan = prefs.getBool('enable_streak_reminder') ?? true;
     });
   }
 
@@ -543,6 +547,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
       value
           ? 'Pengingat jadwal kajian diaktifkan'
           : 'Pengingat jadwal kajian dimatikan',
+    );
+  }
+
+  /// Menyalakan/mematikan pengingat penyelamat runtutan (menjelang malam).
+  Future<void> _togglePengingatRuntutan(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enable_streak_reminder', value);
+    if (mounted) setState(() => _pengingatRuntutan = value);
+
+    await _streakService.pastikanPengingatStreak();
+    await _loadStatusNotifikasi();
+
+    if (!mounted) return;
+    _showSnackBar(
+      value ? 'Pengingat runtutan diaktifkan' : 'Pengingat runtutan dimatikan',
     );
   }
 
@@ -1045,6 +1064,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: _pengingatKajian,
                     onChanged: NotificationService.isSupported
                         ? _togglePengingatKajian
+                        : null,
+                    activeThumbColor: AppColors.getGoldLeaf(context),
+                  ),
+
+                  Divider(
+                    height: 1,
+                    color: Theme.of(context).dividerColor,
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+
+                  // --- Pengingat penyelamat runtutan ---
+                  SwitchListTile(
+                    title: Row(
+                      children: [
+                        Icon(
+                          Icons.local_fire_department_rounded,
+                          color: AppColors.getGoldLeaf(context),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Pengingat Runtutan',
+                          style: TextStyle(
+                            color: AppColors.getTextPrimary(context),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      'Pengingat pukul 20:00 — hanya kalau dzikir & baca '
+                      'Al-Qur\'an hari ini belum tuntas. Runtutan putus kalau '
+                      'bolong lebih dari 3 hari.',
+                      style: TextStyle(
+                        color: AppColors.getOnSurfaceVariant(context),
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                    value: _pengingatRuntutan,
+                    onChanged: NotificationService.isSupported
+                        ? _togglePengingatRuntutan
                         : null,
                     activeThumbColor: AppColors.getGoldLeaf(context),
                   ),

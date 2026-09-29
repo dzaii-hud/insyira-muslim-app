@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../config.dart';
 import '../router/app_router.dart';
+import '../services/streak_service.dart';
 import '../widgets/responsive_content.dart';
 
 class DetailSurahScreen extends StatefulWidget {
@@ -43,6 +44,13 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
 
   // --- [BARU] MAPPING AYAT -> NOMOR HALAMAN MUSHAF (buat surah ini saja) ---
   Map<int, int> _ayahToPageMap = {};
+
+  // --- PENCATATAN PROGRES UNTUK RUNTUTAN HARIAN ---
+  // Mencatat berapa ayat / halaman yang TERLEWATI user hari ini. Batas
+  // hariannya sendiri diatur di StreakService (10 ayat atau 1 halaman).
+  final StreakService _streakService = StreakService();
+  int? _ayatTerakhirDihitung;
+  int? _halamanTerakhirDihitung;
 
   // --- VARIABEL KONTROL MODE MUSHAF / TERJEMAHAN ---
   bool _isMushafMode = false; // Default: False (Mode Terjemahan)
@@ -188,14 +196,67 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     _pageController = PageController(initialPage: _currentPageIndex);
     _isMushafMode = widget.initialMode == 'mushaf';
 
+    // Progres baca dicatat untuk fitur runtutan harian.
+    _itemPositionsListener.itemPositions.addListener(_catatProgresTerjemahan);
+
     _fetchDetailSurah();
     _loadAyahPageMapping();
   }
 
   @override
   void dispose() {
+    _itemPositionsListener.itemPositions.removeListener(
+      _catatProgresTerjemahan,
+    );
     _pageController.dispose();
     super.dispose();
+  }
+
+  // =====================================================================
+  // PENCATATAN PROGRES BACA (untuk runtutan harian)
+  // =====================================================================
+  /// Mencatat ayat baru yang TERLEWATI saat membaca mode terjemahan.
+  ///
+  /// Yang dihitung hanya pergerakan MAJU, dan hanya ayat yang belum pernah
+  /// dihitung — jadi scroll naik-turun tidak menambah progres berkali-kali.
+  ///
+  /// Posisi pertama setelah daftar tampil hanya dipakai sebagai titik awal:
+  /// sekadar membuka halaman tidak boleh dianggap "sudah membaca".
+  void _catatProgresTerjemahan() {
+    if (_isMushafMode) return;
+
+    final int? ayat = _getCurrentlyVisibleAyahNumber();
+    if (ayat == null) return;
+
+    final int? terakhir = _ayatTerakhirDihitung;
+    if (terakhir == null) {
+      _ayatTerakhirDihitung = ayat;
+      return;
+    }
+
+    if (ayat <= terakhir) return;
+
+    _ayatTerakhirDihitung = ayat;
+    _streakService.tambahAyatDibaca(ayat - terakhir);
+  }
+
+  /// Mencatat halaman mushaf yang baru dibuka.
+  ///
+  /// Halaman pertama yang tampil (termasuk saat baru masuk mode mushaf)
+  /// hanya jadi titik awal. Setelah itu, tiap halaman yang dibuka ke depan
+  /// dihitung sebagai halaman yang dibaca.
+  void _catatProgresHalaman(int halaman) {
+    final int? terakhir = _halamanTerakhirDihitung;
+
+    if (terakhir == null) {
+      _halamanTerakhirDihitung = halaman;
+      return;
+    }
+
+    if (halaman <= terakhir) return;
+
+    _halamanTerakhirDihitung = halaman;
+    _streakService.tambahHalamanDibaca(halaman - terakhir);
   }
 
   // --- FUNGSI MELUNCUR KE AYAT YANG DITANDAI (KHUSUS TERJEMAHAN) ---
@@ -1167,6 +1228,8 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
               setState(() {
                 _currentPageIndex = index;
               });
+              // Dicatat untuk runtutan harian (target: 1 halaman).
+              _catatProgresHalaman(index + 1);
             },
             itemBuilder: (context, index) {
               final pageNumber = index + 1;

@@ -16,12 +16,15 @@ import 'dzikir_screen.dart';
 import '../config.dart';
 import '../router/app_router.dart';
 import '../theme/app_theme.dart';
+import '../services/notification_navigator.dart';
 import '../services/notification_service.dart';
+import '../services/streak_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/kajian_card_background.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/notification_center.dart';
 import '../widgets/responsive_content.dart';
+import '../widgets/streak_card.dart';
 
 /// Satu item menu navigasi utama.
 ///
@@ -144,6 +147,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<Kajian> _homeKajianList = [];
   bool _isLoadingKajianHome = true;
 
+  // ===== RUNTUTAN HARIAN =====
+  final StreakService _streakService = StreakService();
+  RingkasanStreak? _ringkasanStreak;
+
   // ===== FAWAIDH WIDGET DI HOME (data real dari API) =====
   List<Map<String, dynamic>> _homeFawaidhList = [];
   bool _isLoadingFawaidhHome = true;
@@ -176,6 +183,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _loadYouTubeData();
     _loadKajianHome();
     _loadFawaidhHome();
+    _loadRingkasanStreak();
+
+    // Pengingat penyelamat runtutan (menjelang malam, hanya kalau belum
+    // tuntas). Sekaligus memperbarui cakupannya tiap kali aplikasi dibuka.
+    _streakService.pastikanPengingatStreak();
+
+    // Kalau aplikasi dibuka DARI sebuah notifikasi, buka halaman yang
+    // dimaksud. Ditunda satu frame supaya navigator benar-benar siap dulu.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationNavigator.tanganiTertunda();
+    });
 
     // Periksa kabar kajian live secara berkala selama aplikasi terbuka.
     // Pemeriksaan pertama ikut lewat baris _loadYouTubeData() di atas.
@@ -193,6 +211,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       lastReadMode = prefs.getString('last_read_mode');
       lastReadMushafPage = prefs.getInt('last_mushaf_page');
     });
+  }
+
+  /// Membaca ulang runtutan harian (dzikir & baca Al-Qur'an).
+  ///
+  /// Dipanggil saat aplikasi dibuka dan setiap kali tab berpindah — user bisa
+  /// saja baru menyelesaikan dzikir atau membaca beberapa ayat di tab lain,
+  /// jadi angkanya harus ikut segar.
+  Future<void> _loadRingkasanStreak() async {
+    final RingkasanStreak ringkasan = await _streakService.ringkasan();
+    if (!mounted) return;
+    setState(() => _ringkasanStreak = ringkasan);
   }
 
   Future<void> _loadKajianHome() async {
@@ -392,6 +421,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _loadLastRead();
       _loadKajianHome();
       _loadFawaidhHome();
+      _loadRingkasanStreak();
+      // Cakupan pengingat runtutan diperbarui begitu aplikasi dipakai lagi.
+      _streakService.pastikanPengingatStreak();
       // Begitu aplikasi dibuka lagi, langsung cek kabar live — jangan tunggu
       // timer 15 menit berikutnya.
       _loadYouTubeData();
@@ -721,6 +753,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() {
       _selectedIndex = index;
     });
+
+    // Angka runtutan disegarkan setiap kali tab berpindah: user bisa saja
+    // baru menyelesaikan dzikir atau membaca beberapa ayat di tab lain.
+    _loadRingkasanStreak();
   }
 
   void _openSettings() {
@@ -1754,6 +1790,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               const SizedBox(height: 22),
               _buildMenuGrid(),
               const SizedBox(height: _sectionGap),
+              _buildRuntutanHarian(),
+              const SizedBox(height: _sectionGap),
               _buildKajianHomeWidget(),
               const SizedBox(height: _sectionGap),
               _buildFawaidhHome(),
@@ -1784,6 +1822,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         );
     }
+  }
+
+  // --- WIDGET RUNTUTAN HARIAN ---
+  /// Kartu runtutan dzikir 🔥 & baca Al-Qur'an 📖.
+  ///
+  /// Selama datanya belum selesai dibaca, kartunya tidak ditampilkan sama
+  /// sekali — lebih baik tidak muncul sekejap lalu berubah, daripada
+  /// menampilkan "0 hari" yang belum tentu benar.
+  Widget _buildRuntutanHarian() {
+    final RingkasanStreak? ringkasan = _ringkasanStreak;
+    if (ringkasan == null) return const SizedBox.shrink();
+
+    return StreakCard(
+      ringkasan: ringkasan,
+      padaKetuk: (bool keDzikir) => _onItemTapped(keDzikir ? 4 : 1),
+    );
   }
 
   // --- WIDGET HEADER SHOLAT ---

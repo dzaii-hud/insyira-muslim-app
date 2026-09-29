@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:insyira_muslim_app/widgets/floating_audio_player.dart';
 import '../theme/app_theme.dart';
 import '../services/notification_service.dart';
+import '../services/streak_service.dart';
 
 class DzikirScreen extends StatefulWidget {
   const DzikirScreen({super.key});
@@ -24,6 +25,7 @@ class _DzikirScreenState extends State<DzikirScreen> {
 
   // ===== STATUS PENYELESAIAN DZIKIR =====
   final NotificationService _notificationService = NotificationService();
+  final StreakService _streakService = StreakService();
   bool _completionNotified = false;
 
   @override
@@ -34,20 +36,35 @@ class _DzikirScreenState extends State<DzikirScreen> {
   }
 
   Future<void> _loadDzikirData() async {
+    // Sesi mana yang sedang dibuka DIAMBIL DULU. Kalau tidak, pergantian
+    // pagi/sore saat proses memuat bisa membuat penanda hariannya tertukar.
+    final bool pagi = _isPagi;
+
+    // Apakah sesi ini sudah tuntas HARI INI menurut data tersimpan, bukan
+    // hanya menurut memori.
+    //
+    // Sebelumnya penanda ini hanya ada di memori, jadi menutup lalu membuka
+    // aplikasi membuat perayaan & notifikasinya muncul lagi — dan runtutan
+    // hariannya tidak pernah tercatat sama sekali.
+    final bool sudahDitandai = await _streakService.dzikirSudahDitandai(
+      isPagi: pagi,
+    );
+
     try {
       final String response = await rootBundle.loadString('assets/dzikir.json');
       final data = await json.decode(response);
 
+      if (!mounted) return;
       setState(() {
-        _dzikirList = _isPagi ? data['pagi'] : data['sore'];
+        _dzikirList = pagi ? data['pagi'] : data['sore'];
         _counters.clear();
         _isLoading = false;
         _activeAudio = null;
-        _completionNotified = false;
+        _completionNotified = sudahDitandai;
       });
     } catch (e) {
       debugPrint("Gagal memuat JSON: $e");
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -103,6 +120,10 @@ class _DzikirScreenState extends State<DzikirScreen> {
     if (!_isAllCompleted) return;
 
     _completionNotified = true;
+
+    // 0. Catat penyelesaian hari ini (dipakai runtutan 🔥 dan sebagai
+    //    penanda supaya perayaan & notifikasi tidak muncul dua kali sehari).
+    _streakService.tandaiDzikirSelesai(isPagi: _isPagi);
 
     // 1. Kirim notifikasi ke sistem (muncul di notification bar HP)
     _notificationService.showDzikirCompleted(isPagi: _isPagi);
@@ -189,7 +210,10 @@ class _DzikirScreenState extends State<DzikirScreen> {
                     Navigator.of(dialogContext).pop();
                     setState(() {
                       _counters.clear();
-                      _completionNotified = false;
+                      // ⚠️ Sengaja TETAP `true`. Hari ini sudah tercatat
+                      // tuntas, jadi perayaan & notifikasinya tidak boleh
+                      // muncul lagi hanya karena user mengulang dzikirnya.
+                      _completionNotified = true;
                     });
                   },
                   child: Text(

@@ -56,6 +56,10 @@ class NotificationService {
   /// yang sudah diisi admin. User harus bisa mematikan salah satunya saja.
   static const String kajianReminderChannelId = 'kajian_reminder_channel_v1';
 
+  /// Channel untuk PENGINGAT PENYELAMAT RUNTUTAN (dzikir & baca Al-Qur'an).
+  /// Dipisah supaya bisa dibisukan sendiri tanpa ikut mematikan adzan.
+  static const String streakChannelId = 'streak_channel_v1';
+
   /// Nama file native tanpa ekstensi di `android/app/src/main/res/raw/`.
   static const String _azanRawSound = 'adzan';
 
@@ -77,6 +81,9 @@ class NotificationService {
   static const String _kajianReminderChannelName = 'Pengingat Jadwal Kajian';
   static const String _kajianReminderChannelDesc =
       'Pengingat 30 menit sebelum kajian dimulai dan saat kajian dimulai';
+  static const String _streakChannelName = 'Runtutan Harian';
+  static const String _streakChannelDesc =
+      'Pengingat menjelang malam kalau dzikir & baca Al-Qur\'an hari ini belum tuntas';
 
   /// Urutan waktu sholat.
   ///
@@ -193,6 +200,30 @@ class NotificationService {
   /// dari API lagi saat user menyalakan kembali toggle-nya.
   static const String _kajianDaftarKey = 'kajian_terjadwal_daftar';
 
+  // --- Pengingat penyelamat runtutan --------------------------------------
+  /// Jam pengingat runtutan (waktu lokal perangkat).
+  ///
+  /// Dipilih 20:00 supaya tidak bertabrakan dengan pengingat dzikir sore
+  /// (17:00), tapi masih menyisakan waktu untuk menuntaskan sebelum hari
+  /// berganti — itulah gunanya pengingat ini.
+  static const int jamPengingatStreak = 20;
+
+  /// Berapa hari ke depan pengingat runtutan dipasang.
+  ///
+  /// Lebih pendek dari adzan/kajian karena pengingatnya diperbarui hampir
+  /// setiap kali aplikasi dibuka (progres berubah → jadwalnya ditata ulang).
+  static const int hariPengingatStreakKeDepan = 7;
+
+  /// ID pengingat runtutan: [2900] untuk hari ini, 2901 besok, dan seterusnya.
+  ///
+  /// 2900–2906 sengaja dipilih karena masih kosong: adzan memakai 1100–1604,
+  /// dzikir 2101–2104, kajian live 2201, pengingat kajian 2300–2899, dan
+  /// tombol Tes Adzan 2999.
+  static const int _streakIdDasar = 2900;
+
+  /// Prefs: daftar ID pengingat runtutan yang sedang terpasang.
+  static const String _streakTerjadwalKey = 'streak_terjadwal_ids';
+
   /// ID untuk tombol "Tes Adzan" di halaman pengaturan.
   static const int _testAzanNotificationId = 2999;
 
@@ -215,11 +246,41 @@ class NotificationService {
   /// [payload] berisi penanda, contoh: `prayer:Subuh` atau `dzikir:pagi`.
   void Function(String? payload)? onNotificationTap;
 
+  /// Payload notifikasi yang MEMBUKA aplikasi dari kondisi tertutup.
+  ///
+  /// [onNotificationTap] hanya terpicu kalau aplikasi sudah hidup, jadi kasus
+  /// "aplikasi tertutup lalu dibuka dari notifikasi" tidak terpegang lewat
+  /// callback itu. Payload-nya dibaca sekali saat [init] dan disimpan di sini
+  /// supaya bisa diambil setelah aplikasi benar-benar siap.
+  String? _payloadPembuka;
+
+  /// Mengambil payload pembuka. Sekali ambil langsung dihapus, supaya
+  /// halaman yang dibuka berulang kali tidak terlempar ke sana lagi.
+  String? ambilPayloadPembuka() {
+    final String? payload = _payloadPembuka;
+    _payloadPembuka = null;
+    return payload;
+  }
+
   // ===================================================================
   // INISIALISASI
   // ===================================================================
-  Future<void> init() async {
-    if (!isSupported) return;
+  /// Proses inisialisasi yang sedang berjalan (kalau ada).
+  ///
+  /// Dipakai supaya `init()` bisa dipanggil dari beberapa tempat SEKALIGUS
+  /// tanpa menjalankan `_notifications.initialize()` dua kali. Ini bukan
+  /// kehati-hatian yang berlebihan: saat aplikasi dibuka, `main()`, Home,
+  /// dan penjadwalan pengingat memanggilnya hampir bersamaan — dan penjagaan
+  /// `_initialized` saja tidak cukup, karena nilainya baru di-set di AKHIR
+  /// proses yang berjalan asinkron.
+  Future<void>? _inisialisasi;
+
+  Future<void> init() {
+    if (!isSupported) return Future<void>.value();
+    return _inisialisasi ??= _inisialisasiSekali();
+  }
+
+  Future<void> _inisialisasiSekali() async {
     if (_initialized) return;
 
     tz.initializeTimeZones();
@@ -244,6 +305,20 @@ class NotificationService {
         onNotificationTap?.call(response.payload);
       },
     );
+
+    // Kalau aplikasi dibuka DARI sebuah notifikasi (kondisi tertutup), ketukan
+    // itu tidak lewat `onDidReceiveNotificationResponse` — payload-nya harus
+    // dibaca di sini, sekali saja. Halaman Home yang akan memprosesnya lewat
+    // `NotificationNavigator.tanganiTertunda()`.
+    try {
+      final NotificationAppLaunchDetails? pembuka = await _notifications
+          .getNotificationAppLaunchDetails();
+      if (pembuka?.didNotificationLaunchApp ?? false) {
+        _payloadPembuka = pembuka?.notificationResponse?.payload;
+      }
+    } catch (e) {
+      debugPrint('[Notif] Gagal membaca notifikasi pembuka: $e');
+    }
 
     // Buat channel secara eksplisit supaya suara adzan PASTI terpasang,
     // bukan menunggu pembuatan otomatis saat notifikasi pertama dijadwalkan.
@@ -350,6 +425,18 @@ class NotificationService {
         enableVibration: true,
       ),
     );
+
+    // Channel pengingat runtutan: dipisah supaya bisa dibisukan sendiri.
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        streakChannelId,
+        _streakChannelName,
+        description: _streakChannelDesc,
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
   }
 
   /// Berguna untuk memastikan izin & channel benar-benar siap.
@@ -409,6 +496,10 @@ class NotificationService {
   /// ID notifikasi adzan yang ditampilkan langsung (bukan terjadwal).
   static int idAdzanLangsung(int indexWaktu) =>
       _adzanIdLangsungDasar + indexWaktu;
+
+  /// ID pengingat penyelamat runtutan untuk [hariKe] hari dari sekarang
+  /// (0 = hari ini).
+  static int idPengingatStreak(int hariKe) => _streakIdDasar + hariKe;
 
   /// Menyusun daftar alarm adzan untuk [hari] hari ke depan.
   ///
@@ -667,7 +758,11 @@ class NotificationService {
   /// [catatSukses] diisi `false` saat memasang ratusan alarm sekaligus, supaya
   /// log tidak dibanjiri ratusan baris. Kegagalan tetap selalu dicatat, dan
   /// keberhasilan yang butuh mode cadangan pun tetap dicatat.
-  Future<void> _jadwalkanDenganCadangan({
+  ///
+  /// Mengembalikan `true` kalau benar-benar berhasil dipasang. Pemanggil yang
+  /// menyimpan daftar ID (mis. pengingat runtutan) butuh nilai ini supaya
+  /// hanya mencatat notifikasi yang nyata terpasang.
+  Future<bool> _jadwalkanDenganCadangan({
     required int id,
     required String judul,
     required String isi,
@@ -702,7 +797,7 @@ class NotificationService {
         if (catatSukses || mode != AndroidScheduleMode.alarmClock) {
           debugPrint('[Notif] $label dijadwalkan ($mode) pada $target');
         }
-        return;
+        return true;
       } catch (e) {
         lastError = e;
         debugPrint('[Notif] Gagal jadwalkan $label dengan $mode: $e');
@@ -710,6 +805,7 @@ class NotificationService {
     }
 
     debugPrint('[Notif] $label GAGAL dijadwalkan. Error terakhir: $lastError');
+    return false;
   }
 
   /// Pesan kesalahan terakhir saat menampilkan notifikasi tes adzan.
@@ -1291,6 +1387,80 @@ class NotificationService {
     }
   }
 
+  // ===================================================================
+  // PENGINGAT PENYELAMAT RUNTUTAN
+  // ===================================================================
+  /// Memasang SATU pengingat runtutan.
+  ///
+  /// Dijadwalkan pada tanggal & jam persis (`berulang: false`), sama seperti
+  /// adzan — jadi tiap hari punya notifikasinya sendiri dan hari yang sudah
+  /// tuntas bisa dibatalkan satu-satu.
+  ///
+  /// Mengembalikan `true` kalau benar-benar berhasil dipasang, supaya
+  /// pemanggilnya hanya menyimpan ID yang nyata terpasang.
+  Future<bool> jadwalkanPengingatStreak(PengingatStreak pengingat) async {
+    if (!isSupported) return false;
+
+    return _jadwalkanDenganCadangan(
+      id: pengingat.id,
+      judul: pengingat.judul,
+      isi: pengingat.isi,
+      target: tz.TZDateTime.from(pengingat.waktu, tz.local),
+      details: NotificationDetails(
+        android: AndroidNotificationDetails(
+          streakChannelId,
+          _streakChannelName,
+          channelDescription: _streakChannelDesc,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+          category: AndroidNotificationCategory.reminder,
+          ticker: 'Runtutan harian belum tuntas',
+          styleInformation: BigTextStyleInformation(pengingat.isi),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBanner: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.active,
+        ),
+      ),
+      payload: 'streak:',
+      label: 'Pengingat runtutan',
+      berulang: false,
+      catatSukses: false,
+    );
+  }
+
+  /// Menyimpan daftar ID pengingat runtutan yang berhasil dipasang.
+  Future<void> simpanIdPengingatStreak(List<int> id) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_streakTerjadwalKey, jsonEncode(id));
+  }
+
+  /// Membatalkan SEMUA pengingat runtutan yang pernah dipasang.
+  Future<void> batalPengingatStreak() async {
+    if (!isSupported) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_streakTerjadwalKey);
+
+    if (raw != null) {
+      try {
+        final decoded = jsonDecode(raw) as List<dynamic>;
+        for (final nilai in decoded) {
+          final id = int.tryParse(nilai.toString());
+          if (id != null) await _cancellAman(id);
+        }
+      } catch (e) {
+        debugPrint('[Streak] Gagal membaca daftar ID pengingat runtutan: $e');
+      }
+    }
+
+    await prefs.remove(_streakTerjadwalKey);
+  }
+
   /// Satu baris ringkas untuk laci notifikasi, contoh:
   /// `kitab al bidayah wa an nihayah • Ustadz Dr Muamar Ma'ruf MA. • mulai 09:15`.
   static String _ringkasPengingatKajian(KajianRingkas k) {
@@ -1647,6 +1817,30 @@ class PengingatKajian {
   final DateTime waktu;
 
   final JenisPengingatKajian jenis;
+}
+
+/// Satu pengingat penyelamat runtutan yang harus dipasang di sistem.
+///
+/// Hasil dari `StreakService.rencanaPengingatStreak` — fungsi murni itu
+/// menyusun daftar ini tanpa menyentuh plugin notifikasi, supaya rencananya
+/// bisa diuji tanpa HP.
+///
+/// Diletakkan di sini (bukan di `streak_service.dart`) karena
+/// [NotificationService.jadwalkanPengingatStreak] menerimanya sebagai
+/// parameter. Kalau kelasnya ditaruh di sana, kedua berkas itu saling
+/// mengimpor — dan itu membingungkan tanpa manfaat.
+class PengingatStreak {
+  const PengingatStreak({
+    required this.id,
+    required this.waktu,
+    required this.judul,
+    required this.isi,
+  });
+
+  final int id;
+  final DateTime waktu;
+  final String judul;
+  final String isi;
 }
 
 /// Ringkasan kesiapan notifikasi — lihat [NotificationService.getStatus].

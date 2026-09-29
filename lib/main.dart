@@ -3,6 +3,8 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'config.dart';
 import 'router/app_router.dart';
+import 'services/notification_navigator.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 
 // Global key untuk akses state dari mana saja
@@ -27,6 +29,18 @@ void main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final isDarkMode = prefs.getBool('is_dark_mode') ?? true;
+
+  // Menekan notifikasi harus membuka halaman yang bersangkutan.
+  //
+  // Dipasang SEBELUM runApp supaya ketukan yang terjadi sangat awal pun
+  // sudah tertangani. Di web notifikasi lokal tidak ada, jadi dilewati.
+  if (NotificationService.isSupported) {
+    final notificationService = NotificationService();
+    notificationService.onNotificationTap = (String? payload) {
+      NotificationNavigator.tangani(payload);
+    };
+    notificationService.init();
+  }
 
   runApp(InsyiraApp(key: appKey, isDarkMode: isDarkMode));
 }
