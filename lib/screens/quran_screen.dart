@@ -395,9 +395,12 @@ class _QuranScreenState extends State<QuranScreen> {
 
           // Runtutan baca — tepat di bawah "Terakhir Dibaca", karena di
           // situ juga ada tombol Lanjut Membaca.
+          //
+          // Jarak kiri-kanan 20 HARUS sama dengan kartu "Terakhir Dibaca"
+          // (lihat `margin` di _buildLastRead) supaya lebarnya sejajar.
           if (_ringkasan != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: StreakWeekCard(
                 judul: 'Runtutan Baca Al-Qur\'an',
                 ikon: Icons.menu_book_rounded,
