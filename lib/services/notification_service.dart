@@ -67,14 +67,58 @@ class NotificationService {
   static const String _kajianChannelDesc =
       'Kabar ketika Insyira TV sedang menyiarkan kajian secara live';
 
-  /// ID notifikasi adzan agar stabil (tidak berubah-ubah seperti hashCode).
-  static const Map<String, int> _prayerNotificationIds = {
-    'Subuh': 1101,
-    'Dzuhur': 1102,
-    'Ashar': 1103,
-    'Maghrib': 1104,
-    'Isya': 1105,
-  };
+  /// Urutan waktu sholat.
+  ///
+  /// Selain dipakai untuk urutan tampilan, URUTAN INI menentukan blok ID
+  /// notifikasi adzan (lihat [_adzanIdDasar]). Jangan diubah tanpa
+  /// menyesuaikannya.
+  static const List<String> urutanWaktuSholat = <String>[
+    'Subuh',
+    'Dzuhur',
+    'Ashar',
+    'Maghrib',
+    'Isya',
+  ];
+
+  /// Berapa hari ke depan jadwal adzan dipasang sekaligus.
+  ///
+  /// Kenapa TIDAK memakai satu alarm berulang tiap hari seperti dulu:
+  /// alarm berulang berpegang pada JAM TETAP, sedangkan waktu sholat bergeser
+  /// sedikit tiap hari. Untuk Pekanbaru, penyimpangannya mencapai −10 sampai
+  /// **+40 menit** dalam setahun (Ashar paling parah) — artinya adzan bisa
+  /// berbunyi 40 menit SEBELUM masuk waktu. Dengan memasang jam yang tepat
+  /// untuk tiap hari, penyimpangan itu hilang sama sekali.
+  static const int hariAdzanKeDepan = 30;
+
+  /// Jadwal diisi ulang kalau sisa cakupannya tinggal segini (hari).
+  ///
+  /// Sengaja TIDAK diisi ulang tiap aplikasi dibuka: karena tiap hari sudah
+  /// memakai jamnya sendiri, memasang ulang 150 alarm terus-menerus hanya
+  /// membuang waktu dan baterai.
+  static const int _sisaHariIsiUlang = 15;
+
+  /// Blok ID notifikasi adzan: 1100 = Subuh, 1200 = Dzuhur, 1300 = Ashar,
+  /// 1400 = Maghrib, 1500 = Isya. Tiap blok selebar 100 ID — satu ID per hari.
+  static const int _adzanIdDasar = 1100;
+  static const int _adzanIdBlok = 100;
+
+  /// ID notifikasi adzan yang ditampilkan LANGSUNG saat aplikasi sedang dibuka
+  /// (jalur cadangan kalau alarm sistem diblokir penghemat baterai).
+  /// Sengaja di luar rentang terjadwal supaya tidak saling menimpa.
+  static const int _adzanIdLangsungDasar = 1600;
+
+  /// ID notifikasi adzan versi LAMA (satu alarm berulang tiap hari).
+  /// Hanya dipakai untuk membersihkan sisa alarm di HP yang sudah memasang
+  /// versi sebelumnya — kalau tidak dibatalkan, adzan akan berbunyi dua kali.
+  static const List<int> _adzanIdLama = <int>[1101, 1102, 1103, 1104, 1105];
+
+  /// Prefs: tanggal terakhir yang sudah tercakup jadwal adzan (`yyyy-MM-dd`).
+  static const String _adzanSampaiKey = 'adzan_terjadwal_sampai';
+
+  /// Prefs: koordinat yang dipakai saat jadwal dipasang, `lat,lon` dibulatkan
+  /// 2 desimal (≈1 km). Dipakai untuk (a) memasang ulang tanpa GPS saat user
+  /// menyalakan lagi toggle adzan, dan (b) mendeteksi user pindah area.
+  static const String _adzanKoordinatKey = 'adzan_koordinat';
 
   /// ID notifikasi penyelesaian dzikir.
   static const int _dzikirPagiNotificationId = 2101;
@@ -286,6 +330,69 @@ class NotificationService {
         'Isya': t.isha,
       };
 
+  /// Parameter hisab yang dipakai aplikasi: metode Singapore + madzhab Syafi'i.
+  ///
+  /// Ada di sini supaya halaman utama dan proses penjadwalan ulang (yang tidak
+  /// punya akses lokasi) memakai perhitungan yang PERSIS sama.
+  static CalculationParameters parameterSholat() {
+    final params = CalculationMethod.singapore.getParameters();
+    params.madhab = Madhab.shafi;
+    return params;
+  }
+
+  /// ID notifikasi untuk satu waktu sholat pada satu hari ke depan.
+  static int idAdzan(int indexWaktu, int hariKe) =>
+      _adzanIdDasar + indexWaktu * _adzanIdBlok + hariKe;
+
+  /// ID notifikasi adzan yang ditampilkan langsung (bukan terjadwal).
+  static int idAdzanLangsung(int indexWaktu) =>
+      _adzanIdLangsungDasar + indexWaktu;
+
+  /// Menyusun daftar alarm adzan untuk [hari] hari ke depan.
+  ///
+  /// ⚠️ Fungsi ini SENGAJA MURNI — tidak menyentuh plugin notifikasi — supaya
+  /// rencananya bisa diuji tanpa HP (lihat `test/notifikasi_adzan_test.dart`).
+  /// Yang dijaga tes itu: **tiap hari memakai jam HARI ITU**, bukan jam yang
+  /// sama terus. Itulah inti perbaikan ketepatan adzan.
+  ///
+  /// Waktu sholat hari ini yang sudah lewat tidak ikut dijadwalkan.
+  static List<JadwalAdzan> rencanaJadwalAdzan(
+    PrayerTimes dasar, {
+    int hari = hariAdzanKeDepan,
+    DateTime? sekarang,
+  }) {
+    final saat = sekarang ?? DateTime.now();
+    final awalHari = DateTime(saat.year, saat.month, saat.day);
+    final rencana = <JadwalAdzan>[];
+
+    for (int h = 0; h < hari; h++) {
+      // Jadwal hari ke-h dihitung sendiri, jadi jamnya tepat untuk hari itu.
+      final jadwalHari = PrayerTimes(
+        dasar.coordinates,
+        DateComponents.from(awalHari.add(Duration(days: h))),
+        dasar.calculationParameters,
+      );
+      final peta = petaWaktuSholat(jadwalHari);
+
+      for (int i = 0; i < urutanWaktuSholat.length; i++) {
+        final waktu = peta[urutanWaktuSholat[i]];
+
+        if (waktu == null || !waktu.isAfter(saat)) continue;
+
+        rencana.add(
+          JadwalAdzan(
+            id: idAdzan(i, h),
+            namaWaktu: urutanWaktuSholat[i],
+            waktu: waktu,
+            hariKe: h,
+          ),
+        );
+      }
+    }
+
+    return rencana;
+  }
+
   /// Waktu lokal berikutnya pada jam [jam]:[menit] — hari ini kalau belum
   /// lewat, atau besok kalau sudah lewat.
   static DateTime waktuLokalBerikutnya(int jam, int menit) {
@@ -302,11 +409,18 @@ class NotificationService {
         : hariIni.add(const Duration(days: 1));
   }
 
-  /// Menjadwalkan adzan untuk 5 waktu sholat.
+  /// Menjadwalkan adzan untuk [hariAdzanKeDepan] hari ke depan.
   ///
-  /// Waktu sholat di jadwalkan berulang tiap hari (`DateTimeComponents.time`),
-  /// jadi walaupun aplikasi tidak pernah dibuka lagi, adzan tetap berbunyi.
-  Future<void> schedulePrayerNotifications(PrayerTimes prayerTimes) async {
+  /// Tiap hari memakai JAM HARI ITU — bukan satu jam tetap yang diulang — jadi
+  /// adzan tetap tepat walau jadwal sholat bergeser sedikit tiap hari.
+  ///
+  /// Pemasangan ulang hanya dilakukan kalau memang perlu: cakupannya sudah
+  /// pendek, atau user pindah area. Kalau masih utuh, fungsi ini langsung
+  /// kembali tanpa memasang ulang ratusan alarm.
+  Future<void> schedulePrayerNotifications(
+    PrayerTimes prayerTimes, {
+    bool paksa = false,
+  }) async {
     if (!isSupported) return;
     await init();
 
@@ -315,8 +429,36 @@ class NotificationService {
 
     if (!enableAzan) {
       await cancelAdzanNotifications();
+      await prefs.remove(_adzanSampaiKey);
       return;
     }
+
+    // Simpan jadwal HARI INI. Dipakai pusat notifikasi & halaman Pengaturan
+    // untuk menampilkan jam tiap waktu sholat.
+    try {
+      await prefs.setString(
+        _prayerTimesKey,
+        jsonEncode(
+          petaWaktuSholat(
+            prayerTimes,
+          ).map((k, v) => MapEntry(k, v.toIso8601String())),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Gagal menyimpan jadwal sholat: $e');
+    }
+
+    final koordinatBaru = _kunciKoordinat(prayerTimes.coordinates);
+    final koordinatLama = prefs.getString(_adzanKoordinatKey);
+
+    // `koordinatLama == null` berarti belum pernah dipasang → harus dipasang.
+    final pindahArea = koordinatLama != null && koordinatLama != koordinatBaru;
+
+    if (!paksa && !pindahArea && _cakupanMasihCukup(prefs)) {
+      return;
+    }
+
+    await prefs.setString(_adzanKoordinatKey, koordinatBaru);
 
     // Bersihkan jadwal adzan lama supaya tidak dobel.
     //
@@ -325,77 +467,94 @@ class NotificationService {
     // dzikir pagi/sore yang sudah terjadwal (bug yang pernah terjadi).
     await cancelAdzanNotifications();
 
-    final now = DateTime.now();
-    final schedules = petaWaktuSholat(prayerTimes);
+    final rencana = rencanaJadwalAdzan(prayerTimes);
 
-    // Simpan supaya bisa dijadwalkan ulang tanpa hitung lokasi lagi
-    // (misalnya saat user menyalakan kembali toggle adzan di Pengaturan).
-    try {
-      await prefs.setString(
-        _prayerTimesKey,
-        jsonEncode(schedules.map((k, v) => MapEntry(k, v.toIso8601String()))),
+    // Dipasang berurutan, bukan sekaligus bersamaan, supaya beban AlarmManager
+    // tidak melonjak di HP kelas bawah.
+    for (final jadwal in rencana) {
+      await _jadwalkanDenganCadangan(
+        id: jadwal.id,
+        judul: 'Waktu Sholat ${jadwal.namaWaktu}',
+        isi: 'Sudah masuk waktu sholat ${jadwal.namaWaktu}',
+        target: tz.TZDateTime.from(jadwal.waktu, tz.local),
+        details: _azanDetails(jadwal.namaWaktu),
+        payload: 'prayer:${jadwal.namaWaktu}',
+        label: 'Adzan ${jadwal.namaWaktu}',
+        berulang: false,
+        catatSukses: false,
       );
-    } catch (e) {
-      debugPrint('Gagal menyimpan jadwal sholat: $e');
     }
 
-    for (final entry in schedules.entries) {
-      await _schedulePrayer(entry.key, entry.value, now);
-    }
+    final akhir = DateTime.now().add(
+      const Duration(days: hariAdzanKeDepan - 1),
+    );
+    await prefs.setString(_adzanSampaiKey, _formatTanggal(akhir));
+
+    debugPrint(
+      '[Notif] ${rencana.length} alarm adzan dipasang, mencakup sampai '
+      '${_formatTanggal(akhir)}',
+    );
   }
 
-  /// Menjadwalkan ulang adzan dari jadwal sholat terakhir yang tersimpan.
-  /// Dipakai halaman Pengaturan saat user mengaktifkan lagi adzan.
+  /// Apakah cakupan jadwal adzan yang tersimpan masih cukup panjang.
+  bool _cakupanMasihCukup(SharedPreferences prefs) {
+    final tersimpan = prefs.getString(_adzanSampaiKey);
+    if (tersimpan == null) return false;
+
+    final akhir = DateTime.tryParse(tersimpan);
+    if (akhir == null) return false;
+
+    final batas = DateTime.now().add(
+      const Duration(days: hariAdzanKeDepan - _sisaHariIsiUlang),
+    );
+
+    return !akhir.isBefore(batas);
+  }
+
+  /// Kunci koordinat untuk mendeteksi perpindahan area.
+  ///
+  /// Dibulatkan 2 desimal (≈1 km) supaya goyangan GPS beberapa meter tidak
+  /// dianggap pindah area — kalau tidak, ratusan alarm akan dipasang ulang
+  /// setiap aplikasi dibuka.
+  static String _kunciKoordinat(Coordinates k) =>
+      '${k.latitude.toStringAsFixed(2)},${k.longitude.toStringAsFixed(2)}';
+
+  /// Tanggal `yyyy-MM-dd` waktu lokal.
+  static String _formatTanggal(DateTime t) =>
+      '${t.year.toString().padLeft(4, '0')}-'
+      '${t.month.toString().padLeft(2, '0')}-'
+      '${t.day.toString().padLeft(2, '0')}';
+
+  /// Memasang ulang jadwal adzan TANPA meminta lokasi lagi.
+  ///
+  /// Dipakai halaman Pengaturan saat user menyalakan kembali toggle adzan.
+  /// Koordinatnya diambil dari jadwal yang terakhir dipasang. Kalau belum
+  /// pernah ada (mis. GPS belum pernah berhasil), tidak ada yang bisa
+  /// dipasang — halaman utama akan memasangnya begitu lokasi didapat.
   Future<void> rescheduleFromSavedPrayerTimes() async {
     if (!isSupported) return;
     await init();
 
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_prayerTimesKey);
-    if (raw == null) return;
+    final tersimpan = prefs.getString(_adzanKoordinatKey);
+    if (tersimpan == null) return;
 
-    try {
-      final Map<String, dynamic> decoded =
-          jsonDecode(raw) as Map<String, dynamic>;
-      final now = DateTime.now();
+    final bagian = tersimpan.split(',');
+    if (bagian.length != 2) return;
 
-      for (final entry in decoded.entries) {
-        final parsed = DateTime.tryParse(entry.value.toString());
-        if (parsed == null) continue;
-        await _schedulePrayer(entry.key, parsed, now);
-      }
-    } catch (e) {
-      debugPrint('Gagal menjadwalkan ulang adzan: $e');
-    }
-  }
+    final lat = double.tryParse(bagian[0]);
+    final lon = double.tryParse(bagian[1]);
+    if (lat == null || lon == null) return;
 
-  Future<void> _schedulePrayer(
-    String prayerName,
-    DateTime prayerTime,
-    DateTime now,
-  ) async {
-    // Geser ke waktu terdekat di masa depan. Karena notifikasi memakai
-    // pola berulang harian (`DateTimeComponents.time`), yang penting hanya
-    // jam-nya, bukan tanggalnya.
-    var target = prayerTime;
-    while (target.isBefore(now)) {
-      target = target.add(const Duration(days: 1));
-    }
-
-    await _jadwalkanDenganCadangan(
-      id: _prayerNotificationIds[prayerName] ?? prayerName.hashCode,
-      judul: 'Waktu Sholat $prayerName',
-      isi: 'Sudah masuk waktu sholat $prayerName',
-      target: tz.TZDateTime.from(target, tz.local),
-      details: _azanDetails(prayerName),
-      payload: 'prayer:$prayerName',
-      label: 'Adzan $prayerName',
+    await schedulePrayerNotifications(
+      PrayerTimes.today(Coordinates(lat, lon), parameterSholat()),
+      paksa: true,
     );
   }
 
   /// Detail notifikasi adzan untuk satu waktu sholat.
   ///
-  /// Dipisah supaya jalur TERJADWAL ([_schedulePrayer]) dan jalur
+  /// Dipisah supaya jalur TERJADWAL (alarm sistem) dan jalur
   /// "aplikasi sedang dibuka" ([showAdzanNow]) memakai tampilan & suara yang
   /// persis sama — kalau tidak, adzan bisa terdengar berbeda tergantung
   /// aplikasi sedang dibuka atau tidak.
@@ -439,6 +598,13 @@ class NotificationService {
   /// Cadangan diperlukan karena izin "Alarm & pengingat"
   /// (`SCHEDULE_EXACT_ALARM`) bisa saja belum diberikan user — kalau semua
   /// mode gagal, itu dicatat di log supaya bisa dilihat lewat `flutter logs`.
+  /// [berulang] `true` = diulang tiap hari pada jam yang sama (dipakai
+  /// pengingat dzikir 09:00/17:00). `false` = SEKALI saja pada tanggal & jam
+  /// persis — ini yang dipakai adzan, supaya tiap hari memakai jamnya sendiri.
+  ///
+  /// [catatSukses] diisi `false` saat memasang ratusan alarm sekaligus, supaya
+  /// log tidak dibanjiri ratusan baris. Kegagalan tetap selalu dicatat, dan
+  /// keberhasilan yang butuh mode cadangan pun tetap dicatat.
   Future<void> _jadwalkanDenganCadangan({
     required int id,
     required String judul,
@@ -447,6 +613,8 @@ class NotificationService {
     required NotificationDetails details,
     required String label,
     String? payload,
+    bool berulang = true,
+    bool catatSukses = true,
   }) async {
     const modes = <AndroidScheduleMode>[
       AndroidScheduleMode.alarmClock,
@@ -464,12 +632,14 @@ class NotificationService {
           target,
           details,
           androidScheduleMode: mode,
-          matchDateTimeComponents: DateTimeComponents.time,
+          matchDateTimeComponents: berulang ? DateTimeComponents.time : null,
           payload: payload,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
         );
-        debugPrint('[Notif] $label dijadwalkan ($mode) pada $target');
+        if (catatSukses || mode != AndroidScheduleMode.alarmClock) {
+          debugPrint('[Notif] $label dijadwalkan ($mode) pada $target');
+        }
         return;
       } catch (e) {
         lastError = e;
@@ -540,14 +710,19 @@ class NotificationService {
   /// masuk. Ini jalur yang membuat adzan tetap berbunyi walaupun alarm
   /// sistem diblokir oleh penghemat baterai (kebiasaan HP Xiaomi/Oppo/Vivo).
   ///
-  /// ID notifikasi yang dipakai SAMA dengan jalur terjadwal, jadi keduanya
-  /// tidak menghasilkan dua baris notifikasi.
+  /// ID notifikasinya sengaja BERBEDA dari jalur terjadwal
+  /// ([idAdzanLangsung]), supaya menampilkan adzan sekarang tidak menghapus
+  /// alarm terjadwal — dan sebaliknya.
   Future<bool> showAdzanNow(String namaWaktu) async {
     if (!isSupported) return false;
+
+    final index = urutanWaktuSholat.indexOf(namaWaktu);
+    if (index < 0) return false;
+
     try {
       await init();
       await _notifications.show(
-        _prayerNotificationIds[namaWaktu] ?? namaWaktu.hashCode,
+        idAdzanLangsung(index),
         'Waktu Sholat $namaWaktu',
         'Sudah masuk waktu sholat $namaWaktu',
         _azanDetails(namaWaktu),
@@ -561,29 +736,39 @@ class NotificationService {
     }
   }
 
-  /// Membatalkan alarm adzan [namaWaktu] yang belum berbunyi.
+  /// Membatalkan alarm adzan [namaWaktu] yang belum berbunyi HARI INI.
   ///
   /// Dipakai tak lama SEBELUM waktu sholat masuk saat aplikasi sedang dibuka.
   /// Tujuannya supaya alarm sistem tidak berbunyi bersamaan dengan
-  /// [showAdzanNow] (adzan dua kali di saat yang sama). Rantai jadwal harian
-  /// dipulihkan lagi oleh [jadwalkanUlangAdzan] tepat setelahnya.
+  /// [showAdzanNow] (adzan dua kali di saat yang sama).
+  ///
+  /// Hanya slot HARI INI yang dibatalkan — alarm untuk hari-hari berikutnya
+  /// tetap terpasang, jadi tidak ada lagi "rantai" yang perlu disambung.
   Future<void> batalkanAdzanTertunda(String namaWaktu) async {
     if (!isSupported) return;
-    final id = _prayerNotificationIds[namaWaktu];
-    if (id == null) return;
-    await _cancellAman(id);
+
+    final index = urutanWaktuSholat.indexOf(namaWaktu);
+    if (index < 0) return;
+
+    await _cancellAman(idAdzan(index, 0));
   }
 
-  /// Menjadwalkan ULANG satu waktu sholat untuk hari berikutnya.
+  /// Memastikan jadwal adzan masih utuh.
   ///
-  /// Wajib dipanggil setelah [batalkanAdzanTertunda], kalau tidak jadwal
-  /// hariannya putus dan adzan besok tidak berbunyi.
-  Future<void> jadwalkanUlangAdzan(String namaWaktu) async {
+  /// ⚠️ Dulu fungsi ini WAJIB dipanggil setelah [batalkanAdzanTertunda], karena
+  /// jadwalnya dipasang sebagai SATU alarm berulang yang harus "disambung"
+  /// ulang tiap hari. Sekarang seluruh jadwal [hariAdzanKeDepan] hari sudah
+  /// terpasang sejak awal, jadi yang perlu dilakukan hanya memastikan
+  /// cakupannya masih utuh — dan kalau masih utuh, langsung kembali tanpa
+  /// kerja apa pun.
+  Future<void> pastikanJadwalAdzanUtuh() async {
     if (!isSupported) return;
-    final jadwal = await getSavedPrayerTimes();
-    final waktu = jadwal[namaWaktu];
-    if (waktu == null) return;
-    await _schedulePrayer(namaWaktu, waktu, DateTime.now());
+
+    final prefs = await SharedPreferences.getInstance();
+    if (_cakupanMasihCukup(prefs)) return;
+
+    // Cakupan sudah pendek: pasang ulang memakai koordinat yang tersimpan.
+    await rescheduleFromSavedPrayerTimes();
   }
 
   /// Apakah adzan [namaWaktu] hari ini sudah pernah berbunyi.
@@ -828,7 +1013,7 @@ class NotificationService {
           jsonDecode(raw) as Map<String, dynamic>;
 
       final hasil = <String, DateTime>{};
-      for (final nama in _prayerNotificationIds.keys) {
+      for (final nama in urutanWaktuSholat) {
         final nilai = decoded[nama];
         final waktu = DateTime.tryParse(nilai?.toString() ?? '');
         if (waktu != null) hasil[nama] = waktu;
@@ -873,14 +1058,24 @@ class NotificationService {
     }
   }
 
-  /// Membatalkan HANYA notifikasi adzan (5 waktu sholat).
+  /// Membatalkan SELURUH notifikasi adzan: 5 waktu × [hariAdzanKeDepan] hari,
+  /// plus sisa alarm versi lama (satu alarm berulang tiap hari).
   ///
   /// ⚠️ Jangan kembali memakai `cancelAll()` di jalur penjadwalan adzan:
   /// fungsi itu ikut menghapus pengingat dzikir dan notifikasi terjadwal lain.
   Future<void> cancelAdzanNotifications() async {
     if (!isSupported) return;
-    for (final id in _prayerNotificationIds.values) {
+
+    // Sisa alarm versi LAMA. Kalau tidak dibatalkan, HP yang sudah memasang
+    // versi sebelumnya akan berbunyi DUA KALI di waktu yang sama.
+    for (final id in _adzanIdLama) {
       await _cancellAman(id);
+    }
+
+    for (int i = 0; i < urutanWaktuSholat.length; i++) {
+      for (int hari = 0; hari < hariAdzanKeDepan; hari++) {
+        await _cancellAman(idAdzan(i, hari));
+      }
     }
   }
 
@@ -943,8 +1138,19 @@ class NotificationService {
       tertunda = const <PendingNotificationRequest>[];
     }
 
-    final idAdzan = _prayerNotificationIds.values.toSet();
-    final adzanTerjadwal = tertunda.where((n) => idAdzan.contains(n.id)).length;
+    // Dihitung per WAKTU SHOLAT (0–5), bukan jumlah baris alarm: sejak jadwal
+    // dipasang [hariAdzanKeDepan] hari sekaligus, satu waktu sholat punya
+    // puluhan alarm — sedangkan halaman Pengaturan menampilkan
+    // "x dari 5 waktu sholat".
+    final idTertunda = tertunda.map((n) => n.id).toSet();
+    int adzanTerjadwal = 0;
+    for (int i = 0; i < urutanWaktuSholat.length; i++) {
+      final ada = List<int>.generate(
+        hariAdzanKeDepan,
+        (h) => idAdzan(i, h),
+      ).any(idTertunda.contains);
+      if (ada) adzanTerjadwal++;
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final jadwal = await getSavedPrayerTimes();
@@ -982,6 +1188,31 @@ class NotificationService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_prayerTimesKey) != null;
   }
+}
+
+/// Satu alarm adzan yang harus dipasang di sistem.
+///
+/// Hasil dari [NotificationService.rencanaJadwalAdzan] — fungsi murni itu
+/// menyusun daftar ini tanpa menyentuh plugin notifikasi, supaya rencananya
+/// bisa diuji tanpa HP.
+class JadwalAdzan {
+  const JadwalAdzan({
+    required this.id,
+    required this.namaWaktu,
+    required this.waktu,
+    required this.hariKe,
+  });
+
+  /// ID notifikasi — lihat [NotificationService.idAdzan].
+  final int id;
+
+  final String namaWaktu;
+
+  /// Waktu sholat yang TEPAT untuk hari tersebut.
+  final DateTime waktu;
+
+  /// 0 = hari ini, 1 = besok, dan seterusnya.
+  final int hariKe;
 }
 
 /// Ringkasan kesiapan notifikasi — lihat [NotificationService.getStatus].

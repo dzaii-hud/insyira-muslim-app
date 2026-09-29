@@ -489,8 +489,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
 
     final coordinates = Coordinates(position.latitude, position.longitude);
-    final params = CalculationMethod.singapore.getParameters();
-    params.madhab = Madhab.shafi;
+    // Parameter hisab dipusatkan di NotificationService supaya perhitungan di
+    // sini dan saat memasang ulang jadwal adzan (tanpa GPS) tidak berbeda.
+    final params = NotificationService.parameterSholat();
 
     final sekarang = DateTime.now();
     setState(() {
@@ -645,12 +646,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (!await _notificationService.isAzanEnabled()) return;
       if (await _notificationService.sudahDiadzankanHariIni(nama)) return;
 
-      // Alarm sistem dibatalkan dulu supaya tidak berbunyi dua kali di saat
-      // yang hampir bersamaan, lalu jadwalnya dipulihkan untuk besok.
+      // ⚠️ URUTAN PENTING. Pemasangan ulang diperiksa LEBIH DULU, karena
+      // kalau cakupan jadwal sudah menipis, pemasangan ulang bisa memasukkan
+      // kembali waktu sholat hari ini. Kalau pembatalan dilakukan sebelum ini,
+      // alarm hari ini akan hidup lagi dan adzan berbunyi dua kali.
+      //
+      // Jadwal 30 hari ke depan sudah terpasang sejak awal; ini hanya
+      // memastikan cakupannya belum habis (kalau masih utuh: tidak ada kerja).
+      await _notificationService.pastikanJadwalAdzanUtuh();
+
+      // Baru setelah itu alarm sistem hari ini dibatalkan, supaya tidak
+      // berbunyi dua kali di saat yang hampir bersamaan.
       await _notificationService.batalkanAdzanTertunda(nama);
       await _notificationService.showAdzanNow(nama);
       await _notificationService.tandaiSudahDiadzankan(nama);
-      await _notificationService.jadwalkanUlangAdzan(nama);
     } catch (e) {
       debugPrint('Gagal mengirim adzan $nama: $e');
     }
