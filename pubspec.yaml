@@ -13,7 +13,7 @@ publish_to: 'none'
 # penjadwalan adzan (menghapus pengingat dzikir), pengingat dzikir pagi 09:00 &
 # sore 17:00, kartu Status Notifikasi di Pengaturan, dan kiblat versi web untuk
 # peramban HP.
-version: 1.0.0+6
+version: 1.0.0+7
 
 environment:
   sdk: ^3.10.4
