@@ -94,12 +94,19 @@ class StreakCard extends StatelessWidget {
         const SizedBox(width: 10),
         Icon(Icons.whatshot_rounded, size: 17, color: emas),
         const SizedBox(width: 8),
-        Text(
-          'Runtutan Harian',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: AppColors.getTextPrimary(context),
+        // ⚠️ WAJIB dibungkus Expanded. Di dalam Row, `Text` diberi lebar
+        // tak terbatas sehingga TIDAK PERNAH membungkus baris — teks yang
+        // lebih lebar dari sisanya akan meluber (dan itu bisa terjadi kalau
+        // ukuran font sistem user diperbesar).
+        Expanded(
+          child: Text(
+            'Runtutan Harian',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: AppColors.getTextPrimary(context),
+            ),
           ),
         ),
       ],
@@ -165,13 +172,20 @@ class StreakCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: <Widget>[
-                Text(
-                  '$runtutan',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    height: 1,
-                    color: runtutan > 0 ? warnaTeks : warnaKedua,
+                // Angka runtutan bisa panjang (ratusan hari) sedangkan
+                // kolomnya sempit — jadi harus boleh menyusut. Di dalam Row,
+                // `Text` tidak pernah membungkus sendiri.
+                Flexible(
+                  child: Text(
+                    '$runtutan',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      height: 1,
+                      color: runtutan > 0 ? warnaTeks : warnaKedua,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 4),
