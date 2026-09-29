@@ -174,6 +174,75 @@ void main() {
     });
   });
 
+  group('mingguIni (kartu bulatan per-hari)', () {
+    // 2026-09-28 adalah hari SENIN, jadi 2026-10-01 = Kamis.
+    final kamis = DateTime(2026, 10, 1, 9, 30);
+
+    test('menyusun Senin sampai Minggu, bukan 7 hari ke belakang', () {
+      final hasil = StreakService.mingguIni(
+        sekarang: kamis,
+        tanggalTuntas: const <String>{},
+      );
+
+      expect(hasil, hasLength(7));
+      expect(
+        hasil.map((HariStreak h) => h.label).toList(),
+        StreakService.labelHari,
+      );
+      expect(hasil.first.tanggal, DateTime(2026, 9, 28));
+      expect(hasil.last.tanggal, DateTime(2026, 10, 4));
+    });
+
+    test('menandai tepat SATU hari sebagai hari ini', () {
+      final hasil = StreakService.mingguIni(
+        sekarang: kamis,
+        tanggalTuntas: const <String>{},
+      );
+
+      expect(hasil.where((HariStreak h) => h.hariIni).length, 1);
+      // Kamis = kolom ke-4.
+      expect(hasil[3].label, 'Kam');
+      expect(hasil[3].hariIni, isTrue);
+    });
+
+    test('menandai hari yang tuntas dari daftar tanggal', () {
+      final hasil = StreakService.mingguIni(
+        sekarang: kamis,
+        // Selasa tuntas, Rabu bolong, Kamis belum.
+        tanggalTuntas: const <String>{'2026-09-29'},
+      );
+
+      expect(hasil[1].label, 'Sel');
+      expect(hasil[1].tuntas, isTrue);
+      expect(hasil[2].tuntas, isFalse);
+      expect(hasil[3].tuntas, isFalse);
+    });
+
+    test('hari setelah hari ini ditandai belum terjadi', () {
+      final hasil = StreakService.mingguIni(
+        sekarang: kamis,
+        tanggalTuntas: const <String>{},
+      );
+
+      expect(hasil[3].masaDepan, isFalse, reason: 'hari ini bukan masa depan');
+      expect(hasil[2].masaDepan, isFalse, reason: 'Rabu sudah lewat');
+      expect(hasil[4].masaDepan, isTrue);
+      expect(hasil[6].masaDepan, isTrue);
+    });
+
+    test('tetap benar kalau hari ini Minggu (kolom terakhir)', () {
+      final hasil = StreakService.mingguIni(
+        sekarang: DateTime(2026, 10, 4, 22, 0),
+        tanggalTuntas: const <String>{},
+      );
+
+      expect(hasil.first.tanggal, DateTime(2026, 9, 28));
+      expect(hasil.last.label, 'Min');
+      expect(hasil.last.hariIni, isTrue);
+      expect(hasil.any((HariStreak h) => h.masaDepan), isFalse);
+    });
+  });
+
   group('target harian', () {
     test('Quran cukup dengan 10 ayat ATAU 1 halaman', () {
       expect(

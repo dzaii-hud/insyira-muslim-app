@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -54,6 +56,30 @@ class StreakService {
   static const String _runtutanDzikirTerakhirKey = 'streak_dzikir_terakhir';
   static const String _runtutanQuranKey = 'streak_quran_jumlah';
   static const String _runtutanQuranTerakhirKey = 'streak_quran_terakhir';
+
+  // --- Prefs: riwayat tanggal yang pernah tuntas ---
+  //
+  // Sengaja menyimpan DAFTAR TANGGAL, bukan cuma jumlah runtutan: kartu
+  // bulatan per-hari di halaman Quran & Dzikir perlu tahu hari mana saja yang
+  // sudah tuntas, dan itu tidak bisa dihitung dari panjang runtutan sekarang
+  // (mis. runtutan 5 hari tapi bolong 2 hari di tengah).
+  static const String _riwayatDzikirKey = 'streak_dzikir_riwayat';
+  static const String _riwayatQuranKey = 'streak_quran_riwayat';
+
+  /// Berapa tanggal terakhir yang disimpan. Cukup untuk beberapa minggu ke
+  /// belakang, tapi tidak tumbuh tanpa batas.
+  static const int batasRiwayat = 28;
+
+  /// Label hari, Senin sampai Minggu — dipakai kartu bulatan per-hari.
+  static const List<String> labelHari = <String>[
+    'Sen',
+    'Sel',
+    'Rab',
+    'Kam',
+    'Jum',
+    'Sab',
+    'Min',
+  ];
 
   // --- Prefs: progres baca Al-Qur'an hari ini ---
   static const String _quranTanggalKey = 'streak_quran_progres_tanggal';
@@ -131,6 +157,47 @@ class StreakService {
     required int ayatHariIni,
     required int halamanHariIni,
   }) => ayatSudahCukup(ayatHariIni) || halamanSudahCukup(halamanHariIni);
+
+  /// Menyusun tujuh hari dalam MINGGU BERJALAN (Senin–Minggu) untuk kartu
+  /// bulatan per-hari.
+  ///
+  /// Memakai minggu kalender, bukan "7 hari terakhir", supaya posisinya tetap
+  /// dan mudah dibaca: hari yang sama selalu ada di kolom yang sama.
+  /// [tanggalTuntas] berisi tanggal berformat `yyyy-MM-dd`.
+  ///
+  /// Fungsi murni — bisa diuji tanpa HP.
+  static List<HariStreak> mingguIni({
+    required DateTime sekarang,
+    required Set<String> tanggalTuntas,
+  }) {
+    final DateTime hariIni = hari(sekarang);
+
+    // DateTime.weekday: 1 = Senin ... 7 = Minggu.
+    final DateTime senin = hariIni.subtract(
+      Duration(days: hariIni.weekday - 1),
+    );
+
+    return <HariStreak>[
+      for (int i = 0; i < 7; i++)
+        _hariKe(senin: senin, i: i, hariIni: hariIni, tuntas: tanggalTuntas),
+    ];
+  }
+
+  static HariStreak _hariKe({
+    required DateTime senin,
+    required int i,
+    required DateTime hariIni,
+    required Set<String> tuntas,
+  }) {
+    final DateTime tanggal = senin.add(Duration(days: i));
+    return HariStreak(
+      tanggal: tanggal,
+      label: labelHari[i],
+      tuntas: tuntas.contains(_formatTanggal(tanggal)),
+      hariIni: tanggal == hariIni,
+      masaDepan: tanggal.isAfter(hariIni),
+    );
+  }
 
   /// Menyusun daftar pengingat penyelamat runtutan untuk beberapa hari ke depan.
   ///
@@ -246,6 +313,7 @@ class StreakService {
       prefs: prefs,
       kunciJumlah: _runtutanDzikirKey,
       kunciTerakhir: _runtutanDzikirTerakhirKey,
+      kunciRiwayat: _riwayatDzikirKey,
     );
   }
 
@@ -297,6 +365,7 @@ class StreakService {
         prefs: prefs,
         kunciJumlah: _runtutanQuranKey,
         kunciTerakhir: _runtutanQuranTerakhirKey,
+        kunciRiwayat: _riwayatQuranKey,
       );
     }
 
@@ -342,6 +411,7 @@ class StreakService {
     required SharedPreferences prefs,
     required String kunciJumlah,
     required String kunciTerakhir,
+    required String kunciRiwayat,
   }) async {
     final DateTime sekarang = DateTime.now();
     final DateTime? terakhir = _parseTanggal(prefs.getString(kunciTerakhir));
@@ -354,6 +424,35 @@ class StreakService {
 
     await prefs.setInt(kunciJumlah, jumlah);
     await prefs.setString(kunciTerakhir, _formatTanggal(sekarang));
+
+    // Riwayat tanggalnya ditambah SEKALI saja per hari (dicek dulu, karena
+    // fungsi ini bisa terpanggil berkali-kali dalam sehari).
+    final List<String> riwayat = _bacaRiwayat(prefs.getString(kunciRiwayat));
+    final String hariIni = _formatTanggal(sekarang);
+    if (!riwayat.contains(hariIni)) {
+      riwayat.add(hariIni);
+      await prefs.setString(kunciRiwayat, jsonEncode(_pangkasRiwayat(riwayat)));
+    }
+  }
+
+  /// Membaca riwayat tanggal dari prefs. Tahan terhadap data rusak.
+  static List<String> _bacaRiwayat(String? mentah) {
+    if (mentah == null || mentah.isEmpty) return <String>[];
+    try {
+      return (jsonDecode(mentah) as List<dynamic>)
+          .map((dynamic e) => e.toString())
+          .toList();
+    } catch (e) {
+      debugPrint('[Streak] Gagal membaca riwayat: $e');
+      return <String>[];
+    }
+  }
+
+  /// Menyisakan [batasRiwayat] tanggal TERAKHIR, tetap urut lama → baru.
+  static List<String> _pangkasRiwayat(List<String> riwayat) {
+    final List<String> urut = List<String>.from(riwayat)..sort();
+    if (urut.length <= batasRiwayat) return urut;
+    return urut.sublist(urut.length - batasRiwayat);
   }
 
   /// Ringkasan runtutan untuk ditampilkan di halaman utama & Pengaturan.
@@ -385,6 +484,8 @@ class StreakService {
       soreTuntas: soreTuntas,
       dzikirHariIniTuntas: pagiTuntas && soreTuntas,
       progresQuran: progres,
+      tanggalDzikir: _bacaRiwayat(prefs.getString(_riwayatDzikirKey)).toSet(),
+      tanggalQuran: _bacaRiwayat(prefs.getString(_riwayatQuranKey)).toSet(),
     );
   }
 
@@ -515,6 +616,8 @@ class RingkasanStreak {
     required this.soreTuntas,
     required this.dzikirHariIniTuntas,
     required this.progresQuran,
+    this.tanggalDzikir = const <String>{},
+    this.tanggalQuran = const <String>{},
   });
 
   /// Panjang runtutan dzikir yang masih berlaku (0 = belum ada / sudah putus).
@@ -531,9 +634,41 @@ class RingkasanStreak {
 
   final ProgresQuran progresQuran;
 
+  /// Tanggal (format `yyyy-MM-dd`) yang pernah tuntas, untuk kartu bulatan
+  /// per-hari di halaman Quran & Dzikir.
+  final Set<String> tanggalDzikir;
+  final Set<String> tanggalQuran;
+
   /// Runtutan terpanjang dari keduanya — dipakai untuk nada pengingat.
   int get tertinggi => dzikir > quran ? dzikir : quran;
 
   /// Apakah keduanya sudah tuntas hari ini.
   bool get semuaTuntasHariIni => dzikirHariIniTuntas && progresQuran.cukup;
+}
+
+/// Satu hari di dalam kartu bulatan per-hari.
+///
+/// Hasil dari [StreakService.mingguIni] — fungsi murni itu menyusun daftar ini
+/// tanpa membaca penyimpanan, supaya bisa diuji tanpa HP.
+class HariStreak {
+  const HariStreak({
+    required this.tanggal,
+    required this.label,
+    required this.tuntas,
+    required this.hariIni,
+    required this.masaDepan,
+  });
+
+  final DateTime tanggal;
+
+  /// Label pendek hari, mis. `Sen`.
+  final String label;
+
+  /// Hari ini sudah tuntas.
+  final bool tuntas;
+
+  final bool hariIni;
+
+  /// Hari ini belum terjadi (masih di depan dalam minggu ini).
+  final bool masaDepan;
 }

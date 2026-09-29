@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
 import '../router/app_router.dart';
+import '../services/streak_service.dart';
+import '../widgets/streak_week_card.dart';
 
 // --- [BARU] Pemetaan halaman awal 114 Surah (Standar Mushaf Madinah) ---
 // Dipakai buat nentuin surah mana yang "punya" suatu nomor halaman, supaya
@@ -167,11 +169,41 @@ class _QuranScreenState extends State<QuranScreen> {
   String? lastReadMode; // 'mushaf' atau 'translation'
   int? lastReadMushafPage;
 
+  // --- RUNTUTAN BACA HARIAN ---
+  final StreakService _streakService = StreakService();
+  RingkasanStreak? _ringkasan;
+
   @override
   void initState() {
     super.initState();
     _fetchSurahData();
     _loadLastRead(); // Panggil fungsi memori saat layar dibuka
+    _muatRingkasan();
+  }
+
+  Future<void> _muatRingkasan() async {
+    final RingkasanStreak ringkasan = await _streakService.ringkasan();
+    if (!mounted) return;
+    setState(() => _ringkasan = ringkasan);
+  }
+
+  /// Menyegarkan "terakhir dibaca" DAN kartu runtutan setelah user kembali
+  /// dari halaman baca.
+  ///
+  /// Keduanya wajib disegarkan bersamaan: progres ayat dicatat dari halaman
+  /// baca, jadi kalau kartu runtutannya tidak ikut dibaca ulang, angkanya
+  /// ketinggalan sampai aplikasi dibuka ulang.
+  Future<void> _segarkanSetelahBaca() async {
+    await _loadLastRead();
+    await _muatRingkasan();
+  }
+
+  /// Satu baris penjelas keadaan baca hari ini.
+  String get _keteranganQuran {
+    final RingkasanStreak? r = _ringkasan;
+    if (r == null) return '';
+    if (r.progresQuran.cukup) return 'Target baca hari ini sudah tercapai';
+    return 'Progres hari ini: ${r.progresQuran.teks}';
   }
 
   @override
@@ -346,7 +378,7 @@ class _QuranScreenState extends State<QuranScreen> {
             mushafPage: initialMushafPage,
           ),
         )
-        .then((_) => _loadLastRead());
+        .then((_) => _segarkanSetelahBaca());
   }
 
   @override
@@ -360,6 +392,24 @@ class _QuranScreenState extends State<QuranScreen> {
           _buildSearchBar(),
           if (_quickActions.isNotEmpty) _buildQuickActionsList(),
           _buildLastRead(),
+
+          // Runtutan baca — tepat di bawah "Terakhir Dibaca", karena di
+          // situ juga ada tombol Lanjut Membaca.
+          if (_ringkasan != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: StreakWeekCard(
+                judul: 'Runtutan Baca Al-Qur\'an',
+                ikon: Icons.menu_book_rounded,
+                runtutan: _ringkasan!.quran,
+                tanggalTuntas: _ringkasan!.tanggalQuran,
+                tuntasHariIni: _ringkasan!.progresQuran.cukup,
+                keteranganHariIni: _keteranganQuran,
+                // Halaman Quran SELALU terang (tidak mengikuti mode gelap),
+                // jadi kartunya juga harus memakai palet terang.
+                terang: true,
+              ),
+            ),
           _buildListHeader(),
 
           // Bagian daftar surah / loading / empty

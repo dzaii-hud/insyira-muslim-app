@@ -5,6 +5,7 @@ import 'package:insyira_muslim_app/widgets/floating_audio_player.dart';
 import '../theme/app_theme.dart';
 import '../services/notification_service.dart';
 import '../services/streak_service.dart';
+import '../widgets/streak_week_card.dart';
 
 class DzikirScreen extends StatefulWidget {
   const DzikirScreen({super.key});
@@ -28,11 +29,35 @@ class _DzikirScreenState extends State<DzikirScreen> {
   final StreakService _streakService = StreakService();
   bool _completionNotified = false;
 
+  /// Runtutan mingguan untuk kartu bulatan per-hari.
+  RingkasanStreak? _ringkasan;
+
   @override
   void initState() {
     super.initState();
     _notificationService.init();
     _loadDzikirData();
+    _muatRingkasan();
+  }
+
+  Future<void> _muatRingkasan() async {
+    final RingkasanStreak ringkasan = await _streakService.ringkasan();
+    if (!mounted) return;
+    setState(() => _ringkasan = ringkasan);
+  }
+
+  /// Satu baris penjelas untuk kartu runtutan. Menyebut bagian mana yang
+  /// masih kurang, bukan cuma "belum selesai".
+  String get _keteranganDzikir {
+    final RingkasanStreak? r = _ringkasan;
+    if (r == null) return '';
+    if (r.dzikirHariIniTuntas) return 'Dzikir pagi & sore selesai hari ini';
+
+    final List<String> belum = <String>[
+      if (!r.pagiTuntas) 'pagi',
+      if (!r.soreTuntas) 'sore',
+    ];
+    return 'Belum tuntas: dzikir ${belum.join(' & ')}';
   }
 
   Future<void> _loadDzikirData() async {
@@ -123,7 +148,9 @@ class _DzikirScreenState extends State<DzikirScreen> {
 
     // 0. Catat penyelesaian hari ini (dipakai runtutan 🔥 dan sebagai
     //    penanda supaya perayaan & notifikasi tidak muncul dua kali sehari).
-    _streakService.tandaiDzikirSelesai(isPagi: _isPagi);
+    _streakService
+        .tandaiDzikirSelesai(isPagi: _isPagi)
+        .then((_) => _muatRingkasan());
 
     // 1. Kirim notifikasi ke sistem (muncul di notification bar HP)
     _notificationService.showDzikirCompleted(isPagi: _isPagi);
@@ -299,6 +326,20 @@ class _DzikirScreenState extends State<DzikirScreen> {
               _buildHeader(context),
               const SizedBox(height: 25),
               _buildSelectionCards(context),
+              const SizedBox(height: 20),
+
+              // Runtutan mingguan — diletakkan tepat di bawah tombol
+              // pagi & petang, karena di situlah user menentukan sesi mana
+              // yang sedang dikerjakan.
+              if (_ringkasan != null)
+                StreakWeekCard(
+                  judul: 'Runtutan Dzikir',
+                  ikon: Icons.local_fire_department_rounded,
+                  runtutan: _ringkasan!.dzikir,
+                  tanggalTuntas: _ringkasan!.tanggalDzikir,
+                  tuntasHariIni: _ringkasan!.dzikirHariIniTuntas,
+                  keteranganHariIni: _keteranganDzikir,
+                ),
               const SizedBox(height: 30),
               _buildControls(context),
               const SizedBox(height: 15),
@@ -392,27 +433,98 @@ class _DzikirScreenState extends State<DzikirScreen> {
     );
   }
 
+  /// Banner judul halaman Dzikir.
+  ///
+  /// Sebelumnya cuma dua baris teks di atas latar kosong. Sekarang dibuat
+  /// banner bergradasi dengan label kecil ala "TERAKHIR DIBACA" di halaman
+  /// Quran, supaya bahasa visualnya seragam.
+  ///
+  /// Warnanya sengaja DIPATOK hijau tua, bukan dari tema: gradasi gelap
+  /// membuat teks putihnya tetap kontras di mode terang maupun gelap.
   Widget _buildHeader(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Dzikir Harian',
-          style: TextStyle(
-            fontSize: 28,
-            fontWeight: FontWeight.bold,
-            color: AppColors.getTextPrimary(context),
-          ),
+    final Color emas = AppColors.getGoldLeaf(context);
+
+    return Container(
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFF003527), Color(0xFF0B6B49)],
         ),
-        const SizedBox(height: 4),
-        Text(
-          'Temukan ketenangan dalam mengingat Allah.',
-          style: TextStyle(
-            fontSize: 14,
-            color: AppColors.getOnSurfaceVariant(context),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: const Color(0xFF003527).withValues(alpha: 0.28),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
-        ),
-      ],
+        ],
+      ),
+      child: Stack(
+        children: <Widget>[
+          // Motif hias: ikon besar tembus pandang. Cukup samar supaya jadi
+          // tekstur, bukan gambar yang ikut dibaca.
+          Positioned(
+            right: -26,
+            top: -30,
+            child: Icon(
+              Icons.auto_awesome,
+              size: 150,
+              color: Colors.white.withValues(alpha: 0.07),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Container(
+                      width: 4,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: emas,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.auto_awesome, size: 13, color: emas),
+                    const SizedBox(width: 6),
+                    Text(
+                      'DZIKIR HARIAN',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.6,
+                        color: emas,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Temukan ketenangan dalam mengingat Allah.',
+                  style: TextStyle(
+                    fontSize: 21,
+                    height: 1.3,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  height: 1,
+                  width: 56,
+                  color: Colors.white.withValues(alpha: 0.25),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

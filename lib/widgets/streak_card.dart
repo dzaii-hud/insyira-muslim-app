@@ -143,15 +143,21 @@ class StreakCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          // Rata TENGAH, bukan rata kiri: dua kolom berdampingan dengan isi
+          // rata kiri membuat angka besar (mis. "7") terlihat menggantung di
+          // tepi kiri kolomnya.
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
             Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
                 Icon(ikon, size: 16, color: emas),
                 const SizedBox(width: 6),
-                Expanded(
+                Flexible(
                   child: Text(
                     judul,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
@@ -169,6 +175,7 @@ class StreakCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: <Widget>[
@@ -195,6 +202,7 @@ class StreakCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               keterangan,
+              textAlign: TextAlign.center,
               style: TextStyle(fontSize: 11, height: 1.3, color: warnaKedua),
             ),
           ],
