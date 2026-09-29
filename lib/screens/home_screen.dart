@@ -202,6 +202,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           .timeout(AppConfig.requestTimeout);
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
+
+        // Pengingat kajian ikut diperbarui setiap kali daftar jadwal berhasil
+        // diambil. Admin bisa menambah / mengubah / menghapus jadwal kapan
+        // saja, dan penjadwalan ini yang membuat pengingat lama tidak
+        // tertinggal. Diletakkan di luar pemeriksaan `mounted` karena
+        // jadwalnya tidak berhubungan dengan tampilan.
+        unawaited(
+          _notificationService.scheduleKajianReminders(
+            data
+                .whereType<Map<String, dynamic>>()
+                .map(KajianRingkas.dariMap)
+                .whereType<KajianRingkas>()
+                .toList(),
+          ),
+        );
+
         if (mounted) {
           setState(() {
             _homeKajianList = data.map((e) => Kajian.fromJson(e)).toList();

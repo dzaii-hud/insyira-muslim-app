@@ -48,6 +48,14 @@ class NotificationService {
   /// tanpa ikut mematikan adzan (dan sebaliknya).
   static const String kajianChannelId = 'kajian_live_channel_v1';
 
+  /// Channel untuk PENGINGAT jadwal kajian (H-30 menit & saat jam mulai).
+  ///
+  /// Dipisah dari [kajianChannelId] — yang dipakai untuk kabar "sedang live" —
+  /// karena keduanya berbeda sifat: kabar live datangnya mendadak dan hanya
+  /// berlaku saat ada siaran, sedangkan pengingat jadwal terikat pada jadwal
+  /// yang sudah diisi admin. User harus bisa mematikan salah satunya saja.
+  static const String kajianReminderChannelId = 'kajian_reminder_channel_v1';
+
   /// Nama file native tanpa ekstensi di `android/app/src/main/res/raw/`.
   static const String _azanRawSound = 'adzan';
 
@@ -66,6 +74,9 @@ class NotificationService {
   static const String _kajianChannelName = 'Kajian Live';
   static const String _kajianChannelDesc =
       'Kabar ketika Insyira TV sedang menyiarkan kajian secara live';
+  static const String _kajianReminderChannelName = 'Pengingat Jadwal Kajian';
+  static const String _kajianReminderChannelDesc =
+      'Pengingat 30 menit sebelum kajian dimulai dan saat kajian dimulai';
 
   /// Urutan waktu sholat.
   ///
@@ -142,6 +153,45 @@ class NotificationService {
   /// Menyimpan ID video live terakhir yang sudah diberitahukan, supaya satu
   /// siaran tidak mengirim notifikasi berulang kali.
   static const String _liveVideoKey = 'notified_live_video_id';
+
+  // --- Pengingat jadwal kajian -------------------------------------------
+  /// Berapa hari ke depan pengingat kajian dipasang.
+  ///
+  /// Sama seperti adzan, tiap pengingat dipasang pada TANGGAL & JAM persis
+  /// (bukan jam tetap yang diulang), karena jadwal kajian berbeda-beda.
+  static const int hariKajianKeDepan = 30;
+
+  /// Berapa menit sebelum kajian dimulai pengingat pertama berbunyi.
+  static const int menitPengingatKajian = 30;
+
+  /// Blok ID pengingat kajian: 2300 + (hari ke-N × 20) + (kajian ke-N × 2).
+  ///
+  /// Tiap kajian memakai DUA ID berurutan: yang pertama untuk pengingat
+  /// H-30 menit, yang kedua untuk saat jam mulai. Rentangnya 2300–2899, aman
+  /// di antara notifikasi kajian live (2201) dan tombol Tes Adzan (2999).
+  static const int _kajianIdDasar = 2300;
+  static const int _kajianIdPerHari = 20;
+
+  /// Batas jumlah kajian per hari yang dipasangi pengingat.
+  ///
+  /// Dibatasi supaya ID-nya tidak melimpah keluar blok 2300–2899 kalau suatu
+  /// hari jadwalnya luar biasa padat. 10 kajian per hari sudah jauh di atas
+  /// kebutuhan nyata; sisa jadwal pagi tetap tampil di aplikasi, hanya
+  /// pengingatnya yang tidak dipasang.
+  static const int _kajianMaksPerHari = 10;
+
+  /// Toggle di halaman Pengaturan: pengingat jadwal kajian.
+  static const String _pengingatKajianKey = 'enable_kajian_reminder';
+
+  /// Prefs: daftar ID pengingat kajian yang sedang terpasang (JSON array).
+  /// Dipakai untuk membatalkan HANYA yang pernah dipasang — jauh lebih hemat
+  /// daripada mencoba membatalkan 600 ID setiap kali jadwal diperbarui.
+  static const String _kajianTerjadwalKey = 'kajian_terjadwal_ids';
+
+  /// Prefs: daftar kajian terakhir yang dipakai memasang pengingat.
+  /// Dipakai halaman Pengaturan untuk memasang ulang TANPA mengambil data
+  /// dari API lagi saat user menyalakan kembali toggle-nya.
+  static const String _kajianDaftarKey = 'kajian_terjadwal_daftar';
 
   /// ID untuk tombol "Tes Adzan" di halaman pengaturan.
   static const int _testAzanNotificationId = 2999;
@@ -283,6 +333,18 @@ class NotificationService {
         kajianChannelId,
         _kajianChannelName,
         description: _kajianChannelDesc,
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
+
+    // Channel pengingat jadwal kajian: dipisah supaya bisa dibisukan sendiri.
+    await android.createNotificationChannel(
+      const AndroidNotificationChannel(
+        kajianReminderChannelId,
+        _kajianReminderChannelName,
+        description: _kajianReminderChannelDesc,
         importance: Importance.high,
         playSound: true,
         enableVibration: true,
@@ -993,6 +1055,276 @@ class NotificationService {
   }
 
   // ===================================================================
+  // PENGINGAT JADWAL KAJIAN
+  // ===================================================================
+  /// Menyusun daftar pengingat kajian untuk [hari] hari ke depan.
+  ///
+  /// ⚠️ Fungsi ini SENGAJA MURNI — tidak menyentuh plugin notifikasi — supaya
+  /// rencananya bisa diuji tanpa HP (lihat `test/pengingat_kajian_test.dart`).
+  ///
+  /// Tiap kajian menghasilkan DUA pengingat:
+  /// 1. [menitPengingatKajian] menit sebelum jam mulai,
+  /// 2. tepat saat jam mulai.
+  ///
+  /// Yang sudah lewat tidak ikut dijadwalkan — tapi keduanya diperiksa
+  /// TERPISAH. Kalau user membuka aplikasi 10 menit sebelum kajian dimulai,
+  /// pengingat H-30 sudah lewat (tidak dipasang) sedangkan pengingat saat
+  /// mulai masih dipasang. Itu justru yang paling dibutuhkan saat itu.
+  static List<PengingatKajian> rencanaPengingatKajian(
+    List<KajianRingkas> daftar, {
+    DateTime? sekarang,
+    int hari = hariKajianKeDepan,
+  }) {
+    final saat = sekarang ?? DateTime.now();
+    final awalHari = DateTime(saat.year, saat.month, saat.day);
+    final rencana = <PengingatKajian>[];
+
+    // Diurutkan supaya penomoran ID di dalam satu hari selalu sama untuk
+    // daftar yang sama (ID harus stabil, kalau tidak jadwal lama bisa
+    // tertinggal di sistem).
+    final urut = List<KajianRingkas>.from(daftar)
+      ..sort((a, b) => a.mulai.compareTo(b.mulai));
+
+    final nomorDalamHari = <String, int>{};
+
+    for (final kajian in urut) {
+      final tanggalKajian = DateTime(
+        kajian.mulai.year,
+        kajian.mulai.month,
+        kajian.mulai.day,
+      );
+      final selisihHari = tanggalKajian.difference(awalHari).inDays;
+
+      if (selisihHari < 0 || selisihHari >= hari) continue;
+
+      final kunciHari = _formatTanggal(tanggalKajian);
+      final nomor = nomorDalamHari[kunciHari] ?? 0;
+      if (nomor >= _kajianMaksPerHari) continue;
+      nomorDalamHari[kunciHari] = nomor + 1;
+
+      final idH30 = _kajianIdDasar + selisihHari * _kajianIdPerHari + nomor * 2;
+      final idMulai = idH30 + 1;
+
+      final waktuH30 = kajian.mulai.subtract(
+        const Duration(minutes: menitPengingatKajian),
+      );
+
+      if (waktuH30.isAfter(saat)) {
+        rencana.add(
+          PengingatKajian(
+            id: idH30,
+            kajian: kajian,
+            waktu: waktuH30,
+            jenis: JenisPengingatKajian.h30,
+          ),
+        );
+      }
+
+      if (kajian.mulai.isAfter(saat)) {
+        rencana.add(
+          PengingatKajian(
+            id: idMulai,
+            kajian: kajian,
+            waktu: kajian.mulai,
+            jenis: JenisPengingatKajian.mulai,
+          ),
+        );
+      }
+    }
+
+    return rencana;
+  }
+
+  /// Memasang pengingat untuk seluruh [daftar] kajian yang akan datang.
+  ///
+  /// Aman dipanggil berkali-kali: jadwal lama dibatalkan lebih dulu, jadi
+  /// tidak ada pengingat ganda. Dipanggil setiap kali daftar kajian selesai
+  /// diambil dari API (`/api/kajian`), karena admin bisa menambah, mengubah,
+  /// atau menghapus jadwal kapan saja.
+  Future<void> scheduleKajianReminders(List<KajianRingkas> daftar) async {
+    if (!isSupported) return;
+    await init();
+
+    final prefs = await SharedPreferences.getInstance();
+    final aktif = prefs.getBool(_pengingatKajianKey) ?? true;
+
+    // Selalu dibatalkan dulu. Daftar kajian bisa berubah kapan saja, jadi
+    // jadwal lama tidak boleh tertinggal (mis. kajian yang sudah dihapus
+    // admin tapi pengingatnya masih berbunyi).
+    await batalPengingatKajian();
+
+    if (!aktif) {
+      debugPrint('[Kajian] Pengingat jadwal kajian dimatikan user');
+      return;
+    }
+
+    final rencana = rencanaPengingatKajian(daftar);
+
+    for (final pengingat in rencana) {
+      final k = pengingat.kajian;
+      final jamMulai = _formatJam(k.mulai);
+
+      await _jadwalkanDenganCadangan(
+        id: pengingat.id,
+        judul: pengingat.jenis == JenisPengingatKajian.h30
+            ? '⏰ $menitPengingatKajian menit lagi: kajian akan dimulai'
+            : '🔴 Kajian sedang dimulai',
+        isi: _ringkasPengingatKajian(k),
+        target: tz.TZDateTime.from(pengingat.waktu, tz.local),
+        details: NotificationDetails(
+          android: AndroidNotificationDetails(
+            kajianReminderChannelId,
+            _kajianReminderChannelName,
+            channelDescription: _kajianReminderChannelDesc,
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            category: AndroidNotificationCategory.reminder,
+            ticker: pengingat.jenis == JenisPengingatKajian.h30
+                ? 'Kajian akan dimulai'
+                : 'Kajian dimulai',
+            styleInformation: BigTextStyleInformation(
+              _detailPengingatKajian(k, pengingat.jenis),
+            ),
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBanner: true,
+            presentSound: true,
+            interruptionLevel: InterruptionLevel.active,
+          ),
+        ),
+        payload: 'kajian_reminder:${pengingat.id}',
+        label:
+            'Pengingat kajian "${k.judul}" (${pengingat.jenis == JenisPengingatKajian.h30 ? 'H-$menitPengingatKajian' : 'mulai'} $jamMulai)',
+        berulang: false,
+        catatSukses: false,
+      );
+    }
+
+    // Daftar ID disimpan supaya pembatalan berikutnya hanya menyentuh yang
+    // benar-benar terpasang, dan daftar kajiannya disimpan supaya toggle di
+    // Pengaturan bisa memasang ulang tanpa memanggil API.
+    await prefs.setString(
+      _kajianTerjadwalKey,
+      jsonEncode(rencana.map((p) => p.id).toList()),
+    );
+    await prefs.setString(
+      _kajianDaftarKey,
+      jsonEncode(daftar.map((k) => k.toJson()).toList()),
+    );
+
+    debugPrint(
+      '[Kajian] ${rencana.length} pengingat dipasang '
+      'dari ${daftar.length} kajian dalam $hariKajianKeDepan hari',
+    );
+  }
+
+  /// Memasang ulang pengingat dari daftar kajian yang TERSIMPAN.
+  ///
+  /// Dipakai halaman Pengaturan saat user menyalakan kembali toggle pengingat:
+  /// tidak perlu memanggil API lagi, cukup memakai jadwal terakhir yang sudah
+  /// didapat. Kalau belum pernah ada (mis. aplikasi baru dibuka dan data
+  /// kajian belum sempat diambil), tidak ada yang bisa dipasang — Home akan
+  /// memasangnya begitu data kajian tiba.
+  Future<void> rescheduleKajianRemindersFromSaved() async {
+    if (!isSupported) return;
+    await init();
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kajianDaftarKey);
+    if (raw == null) return;
+
+    List<KajianRingkas> daftar;
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      daftar = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(KajianRingkas.dariJsonTersimpan)
+          .whereType<KajianRingkas>()
+          .toList();
+    } catch (e) {
+      debugPrint('[Kajian] Gagal membaca daftar kajian tersimpan: $e');
+      return;
+    }
+
+    await scheduleKajianReminders(daftar);
+  }
+
+  /// Membatalkan SEMUA pengingat kajian yang pernah dipasang.
+  ///
+  /// Hanya membatalkan ID yang tercatat di [_kajianTerjadwalKey] — jauh lebih
+  /// hemat daripada menyapu seluruh rentang 2300–2899 setiap kali jadwal
+  /// diperbarui.
+  Future<void> batalPengingatKajian() async {
+    if (!isSupported) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kajianTerjadwalKey);
+
+    if (raw != null) {
+      try {
+        final decoded = jsonDecode(raw) as List<dynamic>;
+        for (final nilai in decoded) {
+          final id = int.tryParse(nilai.toString());
+          if (id != null) await _cancellAman(id);
+        }
+      } catch (e) {
+        debugPrint('[Kajian] Gagal membaca daftar ID pengingat kajian: $e');
+      }
+    }
+
+    await prefs.remove(_kajianTerjadwalKey);
+  }
+
+  /// Berapa pengingat kajian yang sedang terpasang. Dipakai kartu "Status
+  /// Notifikasi" di halaman Pengaturan.
+  Future<int> jumlahPengingatKajian() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kajianTerjadwalKey);
+    if (raw == null) return 0;
+    try {
+      return (jsonDecode(raw) as List<dynamic>).length;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /// Satu baris ringkas untuk laci notifikasi, contoh:
+  /// `kitab al bidayah wa an nihayah • Ustadz Dr Muamar Ma'ruf MA. • mulai 09:15`.
+  static String _ringkasPengingatKajian(KajianRingkas k) {
+    final bagian = <String>[k.judul];
+    if (k.ustadz.trim().isNotEmpty) bagian.add(k.ustadz.trim());
+    bagian.add('mulai ${_formatJam(k.mulai)}');
+    return bagian.join(' • ');
+  }
+
+  /// Isi lengkap notifikasi (dipakai saat notifikasi dibentangkan).
+  static String _detailPengingatKajian(
+    KajianRingkas k,
+    JenisPengingatKajian jenis,
+  ) {
+    final baris = <String>[k.judul];
+    if (k.ustadz.trim().isNotEmpty) baris.add('Ustadz ${k.ustadz.trim()}');
+
+    final waktu = jenis == JenisPengingatKajian.h30
+        ? 'Dimulai pukul ${_formatJam(k.mulai)} '
+              '($menitPengingatKajian menit dari sekarang)'
+        : 'Sedang berlangsung sejak pukul ${_formatJam(k.mulai)}';
+    baris.add(waktu);
+
+    if (k.lokasi.trim().isNotEmpty) baris.add('Lokasi: ${k.lokasi.trim()}');
+
+    return baris.join('\n');
+  }
+
+  /// Jam `HH:mm` waktu lokal.
+  static String _formatJam(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}:'
+      '${t.minute.toString().padLeft(2, '0')}';
+
+  // ===================================================================
   // DATA UNTUK PANEL NOTIFIKASI
   // ===================================================================
   /// Jadwal sholat terakhir yang dipakai untuk menjadwalkan adzan.
@@ -1213,6 +1545,108 @@ class JadwalAdzan {
 
   /// 0 = hari ini, 1 = besok, dan seterusnya.
   final int hariKe;
+}
+
+/// Jenis pengingat kajian.
+enum JenisPengingatKajian {
+  /// [NotificationService.menitPengingatKajian] menit sebelum jam mulai.
+  h30,
+
+  /// Tepat saat jam mulai.
+  mulai,
+}
+
+/// Data kajian seperlunya untuk memasang pengingat.
+///
+/// Sengaja TIDAK memakai model `Kajian` milik `kajian_screen.dart` supaya
+/// service notifikasi tidak bergantung pada layar. Layar cukup mengubah
+/// jawaban `/api/kajian` menjadi daftar ini lewat [dariMap].
+class KajianRingkas {
+  const KajianRingkas({
+    required this.mulai,
+    required this.judul,
+    required this.ustadz,
+    required this.lokasi,
+  });
+
+  /// Tanggal + jam mulai kajian, waktu lokal perangkat.
+  final DateTime mulai;
+  final String judul;
+  final String ustadz;
+  final String lokasi;
+
+  /// Membaca satu item dari `/api/kajian`.
+  ///
+  /// Bentuk tanggal & jam disamakan dengan `Kajian.fromJson` di
+  /// `kajian_screen.dart`: `tanggal` bisa berisi `2026-09-22T00:00:00Z` dan
+  /// `jam_mulai` bisa berisi `18:45:00` — keduanya dipotong ke bagian yang
+  /// dipakai. Dikembalikan `null` kalau tanggal/jamnya tidak bisa dibaca,
+  /// supaya satu data rusak tidak menggagalkan seluruh penjadwalan.
+  static KajianRingkas? dariMap(Map<String, dynamic> json) {
+    final String tanggalRaw = json['tanggal']?.toString() ?? '';
+    final String tanggal = tanggalRaw.contains('T')
+        ? tanggalRaw.split('T').first
+        : tanggalRaw;
+
+    final String jamRaw = json['jam_mulai']?.toString() ?? '';
+    final String jam = jamRaw.length >= 5 ? jamRaw.substring(0, 5) : jamRaw;
+
+    final DateTime? mulai = DateTime.tryParse('$tanggal $jam:00');
+    if (mulai == null) return null;
+
+    return KajianRingkas(
+      mulai: mulai,
+      judul: json['judul']?.toString() ?? '',
+      ustadz: json['ustadz']?.toString() ?? '',
+      lokasi: json['lokasi']?.toString() ?? '',
+    );
+  }
+
+  /// Untuk disimpan di SharedPreferences (lihat
+  /// [NotificationService.rescheduleKajianRemindersFromSaved]).
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'mulai': mulai.toIso8601String(),
+    'judul': judul,
+    'ustadz': ustadz,
+    'lokasi': lokasi,
+  };
+
+  /// Kebalikan dari [toJson].
+  static KajianRingkas? dariJsonTersimpan(Map<String, dynamic> json) {
+    final DateTime? mulai = DateTime.tryParse(json['mulai']?.toString() ?? '');
+    if (mulai == null) return null;
+
+    return KajianRingkas(
+      mulai: mulai,
+      judul: json['judul']?.toString() ?? '',
+      ustadz: json['ustadz']?.toString() ?? '',
+      lokasi: json['lokasi']?.toString() ?? '',
+    );
+  }
+}
+
+/// Satu pengingat kajian yang harus dipasang di sistem.
+///
+/// Hasil dari [NotificationService.rencanaPengingatKajian] — fungsi murni itu
+/// menyusun daftar ini tanpa menyentuh plugin notifikasi, supaya rencananya
+/// bisa diuji tanpa HP (`test/pengingat_kajian_test.dart`).
+class PengingatKajian {
+  const PengingatKajian({
+    required this.id,
+    required this.kajian,
+    required this.waktu,
+    required this.jenis,
+  });
+
+  /// ID notifikasi, di dalam rentang blok pengingat kajian.
+  final int id;
+
+  final KajianRingkas kajian;
+
+  /// Kapan notifikasi harus berbunyi.
+  final DateTime waktu;
+
+  final JenisPengingatKajian jenis;
 }
 
 /// Ringkasan kesiapan notifikasi — lihat [NotificationService.getStatus].

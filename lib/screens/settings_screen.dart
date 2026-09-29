@@ -23,12 +23,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isDarkMode = true;
   bool _enableAzan = true;
   bool _pengingatDzikir = true;
+  bool _pengingatKajian = true;
   final NotificationService _notificationService = NotificationService();
 
   /// Ringkasan kesiapan notifikasi (izin, jumlah alarm terdaftar, adzan
   /// berikutnya). Dipakai untuk menampilkan [NotificationStatus] di UI supaya
   /// masalah "adzan tidak berbunyi" bisa dilihat penyebabnya dari sini.
   NotificationStatus? _statusNotifikasi;
+
+  /// Berapa pengingat jadwal kajian yang sedang terpasang. Ikut ditampilkan di
+  /// kartu Status Notifikasi supaya user bisa memastikan pengingatnya benar-
+  /// benar terpasang tanpa harus menunggu jam kajian tiba.
+  int _jumlahPengingatKajian = 0;
 
   // ===== AKUN =====
   final AuthService _authService = AuthService();
@@ -57,8 +63,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadStatusNotifikasi() async {
     try {
       final status = await _notificationService.getStatus();
+      final jumlahKajian = await _notificationService.jumlahPengingatKajian();
       if (!mounted) return;
-      setState(() => _statusNotifikasi = status);
+      setState(() {
+        _statusNotifikasi = status;
+        _jumlahPengingatKajian = jumlahKajian;
+      });
     } catch (e) {
       debugPrint('Gagal memuat status notifikasi: $e');
     }
@@ -347,6 +357,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               baik: true,
             ),
 
+          // Hanya ditampilkan kalau memang ada pengingat terpasang. Kalau
+          // tidak ada jadwal kajian dalam 30 hari ke depan, itu keadaan yang
+          // NORMAL — bukan masalah yang perlu ditandai merah.
+          if (_pengingatKajian && _jumlahPengingatKajian > 0)
+            baris(
+              label: 'Pengingat jadwal kajian',
+              nilai: '$_jumlahPengingatKajian pengingat terpasang',
+              baik: true,
+            ),
+
           if (!status.izinNotifikasi || !status.izinAlarmPresisi)
             Padding(
               padding: const EdgeInsets.only(top: 14),
@@ -481,6 +501,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _isDarkMode = prefs.getBool('is_dark_mode') ?? true;
       _enableAzan = prefs.getBool('enable_azan') ?? true;
       _pengingatDzikir = prefs.getBool('enable_dzikir_reminder') ?? true;
+      _pengingatKajian = prefs.getBool('enable_kajian_reminder') ?? true;
     });
   }
 
@@ -498,6 +519,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
       value
           ? 'Pengingat dzikir pagi & sore diaktifkan'
           : 'Pengingat dzikir dimatikan',
+    );
+  }
+
+  /// Menyalakan/mematikan pengingat jadwal kajian (H-30 menit & saat mulai).
+  Future<void> _togglePengingatKajian(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('enable_kajian_reminder', value);
+    if (mounted) setState(() => _pengingatKajian = value);
+
+    if (value) {
+      // Dipasang ulang dari jadwal terakhir yang tersimpan, supaya pengingat
+      // langsung aktif tanpa harus membuka halaman Home lebih dulu.
+      await _notificationService.rescheduleKajianRemindersFromSaved();
+    } else {
+      await _notificationService.batalPengingatKajian();
+    }
+
+    await _loadStatusNotifikasi();
+
+    if (!mounted) return;
+    _showSnackBar(
+      value
+          ? 'Pengingat jadwal kajian diaktifkan'
+          : 'Pengingat jadwal kajian dimatikan',
     );
   }
 
@@ -959,6 +1004,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: _pengingatDzikir,
                     onChanged: NotificationService.isSupported
                         ? _togglePengingatDzikir
+                        : null,
+                    activeThumbColor: AppColors.getGoldLeaf(context),
+                  ),
+
+                  Divider(
+                    height: 1,
+                    color: Theme.of(context).dividerColor,
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+
+                  // --- Pengingat jadwal kajian ---
+                  SwitchListTile(
+                    title: Row(
+                      children: [
+                        Icon(
+                          Icons.event_available_rounded,
+                          color: AppColors.getGoldLeaf(context),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Pengingat Jadwal Kajian',
+                          style: TextStyle(
+                            color: AppColors.getTextPrimary(context),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      'Notifikasi jadwal kajian terjadwal: '
+                      '30 menit sebelum dimulai dan tepat saat dimulai',
+                      style: TextStyle(
+                        color: AppColors.getOnSurfaceVariant(context),
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                    value: _pengingatKajian,
+                    onChanged: NotificationService.isSupported
+                        ? _togglePengingatKajian
                         : null,
                     activeThumbColor: AppColors.getGoldLeaf(context),
                   ),
