@@ -1362,7 +1362,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 subtitle: Text(
-                  '${AppInfo.nama} v${AppInfo.versi}\n'
+                  // Sengaja memakai versi LENGKAP (termasuk nomor build), bukan
+                  // cuma "v1.0.0". Saat menguji beberapa build sekaligus, ini
+                  // satu-satunya cara cepat memastikan build mana yang benar-
+                  // benar terpasang di HP tanpa membuka halaman Tentang.
+                  '${AppInfo.nama} v${AppInfo.versiLengkap}\n'
                   'Aplikasi panduan ibadah sehari-hari',
                   style: TextStyle(
                     color: AppColors.getOnSurfaceVariant(context),
