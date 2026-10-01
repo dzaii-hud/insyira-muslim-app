@@ -49,6 +49,32 @@ RUN sed -i 's/\r$//' /etc/nginx/templates/insyira.conf.template
 # Isi aplikasi yang disajikan nginx.
 COPY html /usr/share/nginx/html
 
+# ---------------------------------------------------------------------------
+# Siapkan berkas .gz SEKALI di sini, bukan per permintaan.
+#
+# nginx dengan `gzip_static on` (lihat nginx.conf.template) akan menyajikan
+# `namaberkas.gz` kalau ada. Tanpa langkah ini, nginx meng-gzip ulang setiap
+# permintaan — dan `canvaskit.wasm` berukuran 7 MB, sehingga permintaan
+# pertama setelah container baru hidup terukur 3,4 detik.
+#
+# Diukur 1 Okt 2026: hanya 20 berkas yang cocok (total 24 MB) — yang besar
+# cuma main.dart.js dan keempat varian wasm di canvaskit/. Font (.ttf),
+# gambar, dan audio TIDAK ikut karena sudah termampatkan sendiri; meng-gzip
+# ulang hanya membuang waktu build dan menggembungkan image.
+#
+# `gzip -c > berkas.gz` dipakai (bukan `gzip -k`) karena `-k` tidak ada di
+# gzip versi BusyBox yang dibawa image Alpine.
+#
+# ⚠️ Kalau nanti ada JENIS BERKAS baru yang besar dan berupa teks, tambahkan
+# polanya di sini.
+# ---------------------------------------------------------------------------
+RUN find /usr/share/nginx/html -type f \
+        \( -name '*.js' -o -name '*.json' -o -name '*.html' \
+           -o -name '*.css' -o -name '*.wasm' -o -name '*.bin' \
+           -o -name '*.svg' \) \
+        -size +1k \
+        -exec sh -c 'gzip -6 -c "$1" > "$1.gz"' _ {} \;
+
 # Nilai cadangan kalau $PORT tidak diisi (misalnya saat mencoba image ini
 # di komputer sendiri). Di Railway, nilai ini otomatis ditimpa.
 ENV PORT=8080

@@ -28,6 +28,25 @@ gzip_vary         on;
 gzip_min_length   1024;
 gzip_comp_level   6;
 gzip_proxied      any;
+
+# ---------------------------------------------------------------------------
+# gzip_static — SAJIKAN BERKAS .gz YANG SUDAH DISIAPKAN, jangan kompres ulang.
+#
+# Berkas .gz-nya dibuat sekali saat image dibangun (lihat `RUN find ... gzip`
+# di Dockerfile). Alasannya:
+#
+#   * Tanpa ini, nginx meng-gzip ULANG setiap permintaan. `canvaskit.wasm`
+#     berukuran 7 MB, dan meng-gzip-nya butuh CPU sungguhan — terukur
+#     3,4 detik pada permintaan pertama setelah container baru hidup.
+#   * Dengan berkas .gz yang sudah ada, nginx tinggal mengirimkannya: tidak
+#     ada CPU yang dipakai untuk mengompres, dan hasilnya justru lebih kecil
+#     (dikompres sekali di build, bukan per permintaan).
+#
+# ⚠️ Kalau ada berkas baru yang besar, pastikan polanya ikut disertakan pada
+# perintah `gzip` di Dockerfile, kalau tidak berkas itu kembali dikompres
+# per permintaan (masih benar, hanya lebih lambat).
+# ---------------------------------------------------------------------------
+gzip_static       on;
 gzip_types
     text/plain
     text/css
@@ -164,4 +183,32 @@ server {
 
     # Jangan tampilkan versi nginx di header dan halaman error.
     server_tokens off;
+
+    # -----------------------------------------------------------------------
+    # ETag DIMATIKAN — ini memperbaiki 304 yang selama ini gagal.
+    #
+    # Kejadiannya seperti ini:
+    #
+    #   1. nginx mengirim ETag KUAT, mis. `"6ab9f386-32b622"`.
+    #   2. Edge Railway menambahkan awalan `W/` sehingga sampai di browser
+    #      menjadi `W/"6ab9f386-32b622"` (ETag LEMAH).
+    #   3. Karena berkas penentu versi memakai `Cache-Control: no-cache`,
+    #      browser WAJIB memeriksa ulang tiap halaman dibuka dan mengirim
+    #      ETag lemah itu kembali lewat `If-None-Match`.
+    #   4. nginx membandingkannya sebagai ETag KUAT → tidak cocok → nginx
+    #      membalas `200` beserta SELURUH isi berkas (3,2 MB untuk
+    #      `main.dart.js`), bukan `304`.
+    #
+    # Terukur 1 Okt 2026: permintaan dengan `If-Modified-Since` saja → 304
+    # (benar), tetapi dengan `If-None-Match` — persis yang dikirim browser →
+    # 200 + badan penuh. Artinya pengunjung mengunduh ulang berkas JS-nya
+    # setiap kali membuka aplikasi.
+    #
+    # Dengan ETag dimatikan, browser jatuh ke `Last-Modified` (yang sudah
+    # terbukti membalas 304). Biayanya nyaris nol, dan penghematannya besar.
+    #
+    # Aset yang di-cache lama (`immutable`: canvaskit, font QCF) tidak
+    # terpengaruh — browser tidak pernah menanyakan ulang berkas seperti itu.
+    # -----------------------------------------------------------------------
+etag off;
 }
