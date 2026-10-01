@@ -102,9 +102,19 @@ void main() {
     expect(find.text('Runtutan Harian'), findsOneWidget);
     expect(find.text('7'), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
-    // Dzikir pagi sudah, sore belum → keterangannya harus menyebut yang kurang.
-    expect(find.text('belum: sore'), findsOneWidget);
+    // Dzikir pagi sudah, sore belum → harinya TETAP dihitung runtutan, jadi
+    // keterangannya menyebut bahwa baru satu yang selesai (bukan "belum").
+    expect(find.text('baru 1 dari 2 dzikir'), findsOneWidget);
     expect(find.text('4/10 ayat'), findsOneWidget);
+  });
+
+  testWidgets('menyebut keduanya belum kalau tidak ada dzikir yang selesai', (
+    tester,
+  ) async {
+    await render(tester, lebar: 400, ringkasan: ringkasan(dzikir: 0, quran: 0));
+    await tester.pumpAndSettle();
+
+    expect(find.text('belum: pagi & sore'), findsOneWidget);
   });
 
   testWidgets('menandai centang kalau suatu runtutan sudah tuntas hari ini', (

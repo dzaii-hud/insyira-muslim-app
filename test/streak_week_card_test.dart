@@ -21,6 +21,7 @@ void main() {
     required double lebar,
     required bool terang,
     Set<String> tuntas = tuntasPenuh,
+    Set<String>? sebagian,
     bool tuntasHariIni = true,
     int runtutan = 0,
   }) async {
@@ -38,6 +39,7 @@ void main() {
               ikon: Icons.menu_book_rounded,
               runtutan: runtutan,
               tanggalTuntas: tuntas,
+              tanggalSebagian: sebagian,
               tuntasHariIni: tuntasHariIni,
               keteranganHariIni: 'Progres hari ini: 4/10 ayat',
               terang: terang,
@@ -78,6 +80,21 @@ void main() {
     }
   });
 
+  testWidgets('tidak meluber saat ada hari yang cuma selesai sebagian', (
+    tester,
+  ) async {
+    // Hari sebagian digambar pakai CustomPaint, jadi dipastikan juga tidak
+    // merusak tata letaknya.
+    for (final double lebar in <double>[360, 500, 900]) {
+      await render(
+        tester,
+        lebar: lebar,
+        terang: false,
+        sebagian: const <String>{'2026-09-28', '2026-09-30'},
+      );
+    }
+  });
+
   testWidgets('menampilkan tujuh hari dan centang hanya pada yang tuntas', (
     tester,
   ) async {
@@ -98,6 +115,21 @@ void main() {
     // Tiga hari tuntas → tiga centang.
     expect(find.byIcon(Icons.check_rounded), findsNWidgets(3));
     expect(find.text('0 hari'), findsOneWidget);
+  });
+
+  testWidgets('hari sebagian tidak dapat centang, tapi tetap dihitung', (
+    tester,
+  ) async {
+    await render(
+      tester,
+      lebar: 400,
+      terang: true,
+      tuntas: const <String>{'2026-09-28', '2026-09-29'},
+      sebagian: const <String>{'2026-09-29'},
+    );
+
+    // Senin penuh (1 centang), Selasa sebagian (tanpa centang).
+    expect(find.byIcon(Icons.check_rounded), findsNWidgets(1));
   });
 
   testWidgets('menampilkan jumlah runtutan dan keterangan hari ini', (

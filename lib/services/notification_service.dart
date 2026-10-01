@@ -203,10 +203,13 @@ class NotificationService {
   // --- Pengingat penyelamat runtutan --------------------------------------
   /// Jam pengingat runtutan (waktu lokal perangkat).
   ///
-  /// Dipilih 20:00 supaya tidak bertabrakan dengan pengingat dzikir sore
-  /// (17:00), tapi masih menyisakan waktu untuk menuntaskan sebelum hari
-  /// berganti — itulah gunanya pengingat ini.
-  static const int jamPengingatStreak = 20;
+  /// ⚠️ Pukul 16:00, BUKAN 20:00 seperti sebelumnya. Alasannya: sejak
+  /// 1 Okt 2026 dzikir punya batas waktu (pagi sampai 11:00, petang sampai
+  /// 18:00). Pengingat pukul 20:00 jadi mustahil menolong — saat itu semua
+  /// dzikir sudah ditutup, jadi yang bisa diselamatkan tinggal baca Al-Qur'an.
+  /// Pukul 16:00 masih menyisakan dua jam untuk dzikir petang, sehingga
+  /// pengingat ini benar-benar bisa menyelamatkan runtutan.
+  static const int jamPengingatStreak = 16;
 
   /// Berapa hari ke depan pengingat runtutan dipasang.
   ///

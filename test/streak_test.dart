@@ -230,6 +230,35 @@ void main() {
       expect(hasil[6].masaDepan, isTrue);
     });
 
+    test('menandai hari yang cuma SEBAGIAN dengan tanggalSebagian', () {
+      final hasil = StreakService.mingguIni(
+        sekarang: kamis,
+        // Selasa tercatat sebagai hari runtutan, tapi cuma satu dzikir.
+        tanggalTuntas: const <String>{'2026-09-29'},
+        tanggalSebagian: const <String>{'2026-09-29'},
+      );
+
+      expect(hasil[1].label, 'Sel');
+      expect(
+        hasil[1].tuntas,
+        isFalse,
+        reason: 'baru satu dzikir — belum boleh dianggap penuh',
+      );
+      expect(hasil[1].sebagian, isTrue);
+    });
+
+    test('hari yang penuh tetap penuh walau tidak ada di daftar sebagian', () {
+      final hasil = StreakService.mingguIni(
+        sekarang: kamis,
+        tanggalTuntas: const <String>{'2026-09-29'},
+        tanggalSebagian: const <String>{'2026-09-28'},
+      );
+
+      expect(hasil[1].tuntas, isTrue);
+      expect(hasil[1].sebagian, isFalse);
+      expect(hasil[0].sebagian, isTrue);
+    });
+
     test('tetap benar kalau hari ini Minggu (kolom terakhir)', () {
       final hasil = StreakService.mingguIni(
         sekarang: DateTime(2026, 10, 4, 22, 0),
@@ -271,19 +300,21 @@ void main() {
     final sekarang = DateTime(2026, 9, 29, 12, 0);
 
     List<PengingatStreak> rencana({
-      bool hariIniTuntas = false,
-      bool dzikirTuntas = false,
-      bool quranTuntas = false,
+      Set<BagianRuntutan>? kekurangan,
       int runtutanTertinggi = 0,
     }) => StreakService.rencanaPengingatStreak(
-      hariIniTuntas: hariIniTuntas,
-      dzikirTuntas: dzikirTuntas,
-      quranTuntas: quranTuntas,
+      kekurangan:
+          kekurangan ??
+          const <BagianRuntutan>{
+            BagianRuntutan.dzikirPagi,
+            BagianRuntutan.dzikirPetang,
+            BagianRuntutan.quran,
+          },
       runtutanTertinggi: runtutanTertinggi,
       sekarang: sekarang,
     );
 
-    test('dipasang untuk 7 hari, satu per hari pada pukul 20:00', () {
+    test('dipasang untuk 7 hari, satu per hari pada jam pengingat', () {
       final hasil = rencana();
 
       expect(hasil, hasLength(NotificationService.hariPengingatStreakKeDepan));
@@ -292,17 +323,18 @@ void main() {
         final DateTime tanggal = DateTime(2026, 9, 29 + h);
         expect(
           hasil[h].waktu,
-          DateTime(tanggal.year, tanggal.month, tanggal.day, 20),
+          DateTime(
+            tanggal.year,
+            tanggal.month,
+            tanggal.day,
+            NotificationService.jamPengingatStreak,
+          ),
         );
       }
     });
 
-    test('hari ini DILEWATI kalau semuanya sudah tuntas', () {
-      final hasil = rencana(
-        hariIniTuntas: true,
-        dzikirTuntas: true,
-        quranTuntas: true,
-      );
+    test('hari ini DILEWATI kalau tidak ada lagi yang bisa dikejar', () {
+      final hasil = rencana(kekurangan: const <BagianRuntutan>{});
 
       expect(
         hasil,
@@ -316,17 +348,40 @@ void main() {
     });
 
     test('menyebut apa yang masih kurang', () {
-      final hanyaDzikir = rencana(dzikirTuntas: true);
-      expect(hanyaDzikir.first.isi, contains('ayat'));
+      final hanyaQuran = rencana(
+        kekurangan: const <BagianRuntutan>{BagianRuntutan.quran},
+      );
+      expect(hanyaQuran.first.isi, contains('ayat'));
+      expect(hanyaQuran.first.isi, isNot(contains('dzikir')));
 
-      final hanyaQuran = rencana(quranTuntas: true);
-      expect(hanyaQuran.first.isi, contains('dzikir'));
+      final hanyaDzikirPetang = rencana(
+        kekurangan: const <BagianRuntutan>{BagianRuntutan.dzikirPetang},
+      );
+      expect(hanyaDzikirPetang.first.isi, contains('dzikir petang'));
+      expect(hanyaDzikirPetang.first.isi, isNot(contains('ayat')));
     });
 
     test('menyebut runtutan yang bisa putus kalau memang sedang berjalan', () {
       final hasil = rencana(runtutanTertinggi: 12);
       expect(hasil.first.isi, contains('12 hari'));
     });
+
+    test(
+      'hari berikutnya memakai pesan umum, bukan daftar kekurangan hari ini',
+      () {
+        final hasil = rencana(
+          kekurangan: const <BagianRuntutan>{BagianRuntutan.quran},
+        );
+
+        // Entri [0] = hari ini, [1] = besok.
+        expect(hasil[1].isi, contains('dzikir pagi & petang'));
+        expect(
+          hasil[1].isi,
+          isNot(contains('Tinggal')),
+          reason: 'kekurangan besok belum bisa diketahui hari ini',
+        );
+      },
+    );
 
     test('ID unik, berurutan, dan tidak menabrak notifikasi lain', () {
       final hasil = rencana();

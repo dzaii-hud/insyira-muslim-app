@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:insyira_muslim_app/widgets/floating_audio_player.dart';
 import '../theme/app_theme.dart';
+import '../services/dzikir_service.dart';
 import '../services/notification_service.dart';
 import '../services/streak_service.dart';
 import '../widgets/streak_week_card.dart';
@@ -35,9 +36,63 @@ class _DzikirScreenState extends State<DzikirScreen> {
   @override
   void initState() {
     super.initState();
+
+    // Kalau sesi pagi sudah ditutup, langsung buka sesi yang masih berlaku.
+    // Tanpa ini, user yang membuka aplikasi sore hari akan disambut sesi pagi
+    // yang penghitungnya mati — membingungkan.
+    _isPagi = DzikirWaktu.masihDalamWaktu(isPagi: true);
+
     _notificationService.init();
     _loadDzikirData();
     _muatRingkasan();
+  }
+
+  /// Apakah sesi yang sedang dibuka sudah lewat batas waktunya.
+  bool get _waktuLewat => !DzikirWaktu.masihDalamWaktu(isPagi: _isPagi);
+
+  /// Dipakai supaya dialog "waktu sudah lewat" tidak menumpuk kalau user
+  /// menekan berkali-kali.
+  bool _sedangTampilPesanWaktu = false;
+
+  /// Memberitahu user KENAPA dzikirnya tidak dihitung lagi.
+  ///
+  /// Bunyi pesannya sengaja apa adanya seperti yang diminta pemilik aplikasi.
+  Future<void> _beritahuWaktuLewat() async {
+    if (!mounted || _sedangTampilPesanWaktu) return;
+    _sedangTampilPesanWaktu = true;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.getSurfaceContainerLow(dialogContext),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: AppColors.getSurfaceVariant(dialogContext)),
+        ),
+        icon: Icon(
+          Icons.schedule_rounded,
+          size: 32,
+          color: AppColors.getGoldLeaf(dialogContext),
+        ),
+        content: Text(
+          DzikirWaktu.pesanLewat(isPagi: _isPagi),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.5,
+            color: AppColors.getTextPrimary(dialogContext),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Baik, mengerti'),
+          ),
+        ],
+      ),
+    );
+
+    _sedangTampilPesanWaktu = false;
   }
 
   Future<void> _muatRingkasan() async {
@@ -51,11 +106,20 @@ class _DzikirScreenState extends State<DzikirScreen> {
   String get _keteranganDzikir {
     final RingkasanStreak? r = _ringkasan;
     if (r == null) return '';
-    if (r.dzikirHariIniTuntas) return 'Dzikir pagi & sore selesai hari ini';
+    if (r.dzikirHariIniTuntas) return 'Dzikir pagi & petang selesai hari ini';
+
+    final int jumlah = (r.pagiTuntas ? 1 : 0) + (r.soreTuntas ? 1 : 0);
+
+    // Sehari cukup SALAH SATU dzikir untuk dihitung sebagai runtutan (karena
+    // sesi yang lain bisa saja sudah lewat waktunya). Keadaan itu disebut
+    // apa adanya supaya bulatan setengahnya tidak membingungkan.
+    if (jumlah == 1) {
+      return 'Baru 1 dari 2 dzikir yang selesai hari ini';
+    }
 
     final List<String> belum = <String>[
       if (!r.pagiTuntas) 'pagi',
-      if (!r.soreTuntas) 'sore',
+      if (!r.soreTuntas) 'petang',
     ];
     return 'Belum tuntas: dzikir ${belum.join(' & ')}';
   }
@@ -337,6 +401,8 @@ class _DzikirScreenState extends State<DzikirScreen> {
                   ikon: Icons.local_fire_department_rounded,
                   runtutan: _ringkasan!.dzikir,
                   tanggalTuntas: _ringkasan!.tanggalDzikir,
+                  // Hari yang cuma selesai SATU dzikir digambar setengah.
+                  tanggalSebagian: _ringkasan!.tanggalDzikirSebagian,
                   tuntasHariIni: _ringkasan!.dzikirHariIniTuntas,
                   keteranganHariIni: _keteranganDzikir,
                 ),
@@ -345,6 +411,10 @@ class _DzikirScreenState extends State<DzikirScreen> {
               const SizedBox(height: 15),
 
               if (!_isLoading && _dzikirList.isNotEmpty) ...[
+                if (_waktuLewat) ...[
+                  _buildBannerWaktuLewat(context),
+                  const SizedBox(height: 16),
+                ],
                 _buildProgressCard(context),
                 const SizedBox(height: 20),
               ],
@@ -528,6 +598,44 @@ class _DzikirScreenState extends State<DzikirScreen> {
     );
   }
 
+  /// Banner penjelas di atas daftar dzikir saat waktunya sudah lewat.
+  ///
+  /// Ditampilkan SEBELUM user menekan apa pun, supaya aturannya bisa dipahami
+  /// tanpa harus mencoba dulu.
+  Widget _buildBannerWaktuLewat(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.getSurfaceContainerLow(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.getGoldLeaf(context).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            Icons.lock_clock_rounded,
+            size: 18,
+            color: AppColors.getGoldLeaf(context),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              DzikirWaktu.keteranganLewat(isPagi: _isPagi),
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: AppColors.getOnSurfaceVariant(context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSelectionCards(BuildContext context) {
     return Row(
       children: [
@@ -537,7 +645,7 @@ class _DzikirScreenState extends State<DzikirScreen> {
             child: _buildTabCard(
               context,
               title: 'Pagi',
-              subtitle: 'Dzikir Pagi',
+              subtitle: DzikirWaktu.keteranganBerlaku(isPagi: true),
               icon: Icons.wb_twilight,
               isActive: _isPagi,
             ),
@@ -550,7 +658,7 @@ class _DzikirScreenState extends State<DzikirScreen> {
             child: _buildTabCard(
               context,
               title: 'Petang',
-              subtitle: 'Dzikir Petang',
+              subtitle: DzikirWaktu.keteranganBerlaku(isPagi: false),
               icon: Icons.nights_stay_outlined,
               isActive: !_isPagi,
             ),
@@ -745,7 +853,23 @@ class _DzikirScreenState extends State<DzikirScreen> {
     );
   }
 
+  /// Satu kotak dzikir.
+  ///
+  /// Seluruh kotak tetap menerima ketukan walau waktunya sudah lewat — bukan
+  /// untuk berdzikir, tapi supaya user tahu ALASANnya tidak dihitung. Membaca
+  /// teksnya tetap bebas; yang dimatikan hanya penghitungnya.
   Widget _buildDzikirCard(
+    BuildContext context,
+    Map<String, dynamic> dzikir,
+    int index,
+  ) {
+    return GestureDetector(
+      onTap: _waktuLewat ? _beritahuWaktuLewat : null,
+      child: _buildIsiKartuDzikir(context, dzikir, index),
+    );
+  }
+
+  Widget _buildIsiKartuDzikir(
     BuildContext context,
     Map<String, dynamic> dzikir,
     int index,
@@ -895,13 +1019,22 @@ class _DzikirScreenState extends State<DzikirScreen> {
                 ],
               ),
               GestureDetector(
-                onTap: () => _incrementCounter(index, target),
+                onTap: _waktuLewat
+                    ? _beritahuWaktuLewat
+                    : () => _incrementCounter(index, target),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
                   width: 50,
                   height: 50,
                   decoration: BoxDecoration(
-                    color: isCompleted ? goldColor : surfaceVariant,
+                    // Waktu lewat: tombolnya dibuat pudar supaya terlihat
+                    // mati, tapi tetap menerima ketukan — ketukan itulah yang
+                    // memunculkan penjelasannya.
+                    color: isCompleted
+                        ? goldColor
+                        : (_waktuLewat
+                              ? surfaceVariant.withOpacity(0.45)
+                              : surfaceVariant),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: isCompleted
@@ -916,19 +1049,49 @@ class _DzikirScreenState extends State<DzikirScreen> {
                             color: Color(0xFF00120B),
                             size: 24,
                           )
-                        : Text(
-                            currentCount.toString(),
-                            style: TextStyle(
-                              color: textColor,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                        : (_waktuLewat
+                              ? Icon(
+                                  Icons.lock_outline_rounded,
+                                  color: subTextColor,
+                                  size: 20,
+                                )
+                              : Text(
+                                  currentCount.toString(),
+                                  style: TextStyle(
+                                    color: textColor,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )),
                   ),
                 ),
               ),
             ],
           ),
+
+          // Penjelasan tambahan di dalam kotaknya, supaya alasannya terbaca
+          // tepat di sebelah tombol yang dimatikan.
+          if (_waktuLewat) ...[
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline_rounded, color: subTextColor, size: 14),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Waktu dzikir ${_isPagi ? 'pagi' : 'petang'} sudah lewat — '
+                    'dzikir ini tidak dihitung lagi.',
+                    style: TextStyle(
+                      color: subTextColor,
+                      fontSize: 11,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

@@ -12,6 +12,8 @@ import '../theme/app_theme.dart';
 ///
 /// Tiga keadaan bulatan:
 /// * **tuntas** → biru + centang
+/// * **sebagian** → setengah biru setengah kuning (khusus dzikir: baru satu
+///   sesi yang selesai, sesi lain terlewat)
 /// * **hari ini, belum tuntas** → oranye polos (menarik perhatian, tanpa
 ///   centang karena memang belum dikerjakan)
 /// * belum tuntas / belum terjadi → abu-abu muda polos
@@ -24,6 +26,7 @@ class StreakWeekCard extends StatelessWidget {
     required this.tanggalTuntas,
     required this.tuntasHariIni,
     required this.keteranganHariIni,
+    this.tanggalSebagian,
     this.terang = false,
     this.sekarang,
   });
@@ -36,6 +39,11 @@ class StreakWeekCard extends StatelessWidget {
 
   /// Tanggal (`yyyy-MM-dd`) yang pernah tuntas, dari [RingkasanStreak].
   final Set<String> tanggalTuntas;
+
+  /// Tanggal yang cuma selesai SEBAGIAN (dzikir: baru satu sesi). Harinya tetap
+  /// dihitung runtutan, tapi bulatannya digambar setengah. Halaman Quran tidak
+  /// mengirim ini karena targetnya cuma satu.
+  final Set<String>? tanggalSebagian;
 
   final bool tuntasHariIni;
 
@@ -56,6 +64,7 @@ class StreakWeekCard extends StatelessWidget {
 
   static const Color _biru = Color(0xFF29B6F6);
   static const Color _oranye = Color(0xFFF5A623);
+  static const Color _kuning = Color(0xFFFBC02D);
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +72,7 @@ class StreakWeekCard extends StatelessWidget {
     final List<HariStreak> minggu = StreakService.mingguIni(
       sekarang: saat,
       tanggalTuntas: tanggalTuntas,
+      tanggalSebagian: tanggalSebagian,
     );
 
     final Color warnaKartu = terang
@@ -180,8 +190,10 @@ class StreakWeekCard extends StatelessWidget {
     required Color warnaKosong,
     required Color warnaKedua,
   }) {
-    final Color isi = hari.tuntas
+    final Color warnaIsi = hari.tuntas
         ? _biru
+        : hari.sebagian
+        ? _kuning
         : (hari.hariIni ? _oranye : warnaKosong);
 
     return Column(
@@ -198,18 +210,64 @@ class StreakWeekCard extends StatelessWidget {
         Container(
           width: 32,
           height: 32,
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: isi,
+            color: warnaIsi,
             shape: BoxShape.circle,
             border: hari.masaDepan
                 ? Border.all(color: warnaKedua.withValues(alpha: 0.35))
                 : null,
           ),
-          child: hari.tuntas
-              ? const Icon(Icons.check_rounded, size: 19, color: Colors.white)
-              : null,
+          // Hari yang cuma sebagian digambar setengah biru (yang selesai)
+          // dan setengah kuning (yang terlewat) — bukan salah satu warnanya
+          // saja, karena keduanya memang terjadi hari itu.
+          child: hari.sebagian
+              ? CustomPaint(
+                  size: const Size(32, 32),
+                  painter: const _BulatanSebagianPainter(
+                    warnaSelesai: _biru,
+                    warnaKurang: _kuning,
+                  ),
+                )
+              : (hari.tuntas
+                    ? const Icon(
+                        Icons.check_rounded,
+                        size: 19,
+                        color: Colors.white,
+                      )
+                    : null),
         ),
       ],
     );
   }
+}
+
+/// Melukis bulatan dua warna: separuh kiri [warnaSelesai], separuh kanan
+/// [warnaKurang].
+class _BulatanSebagianPainter extends CustomPainter {
+  const _BulatanSebagianPainter({
+    required this.warnaSelesai,
+    required this.warnaKurang,
+  });
+
+  final Color warnaSelesai;
+  final Color warnaKurang;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset pusat = Offset(size.width / 2, size.height / 2);
+    final double radius = size.width / 2;
+
+    canvas.drawCircle(pusat, radius, Paint()..color = warnaKurang);
+
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, size.width / 2, size.height));
+    canvas.drawCircle(pusat, radius, Paint()..color = warnaSelesai);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_BulatanSebagianPainter oldDelegate) =>
+      oldDelegate.warnaSelesai != warnaSelesai ||
+      oldDelegate.warnaKurang != warnaKurang;
 }

@@ -117,6 +117,13 @@ class StreakCard extends StatelessWidget {
   String _keteranganDzikir() {
     if (ringkasan.dzikirHariIniTuntas) return 'pagi & sore selesai';
 
+    // Sehari cukup SALAH SATU dzikir untuk dihitung sebagai runtutan (sesi
+    // yang lain bisa saja sudah lewat batas waktunya), jadi keadaannya
+    // disebut apa adanya.
+    final int jumlah =
+        (ringkasan.pagiTuntas ? 1 : 0) + (ringkasan.soreTuntas ? 1 : 0);
+    if (jumlah == 1) return 'baru 1 dari 2 dzikir';
+
     final List<String> belum = <String>[
       if (!ringkasan.pagiTuntas) 'pagi',
       if (!ringkasan.soreTuntas) 'sore',

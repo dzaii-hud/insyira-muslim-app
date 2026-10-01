@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'dzikir_service.dart';
 import 'notification_service.dart';
 
 /// Aturan runtutan harian (streak) untuk **dzikir** 🔥 dan **baca Al-Qur'an** 📖.
@@ -65,6 +66,13 @@ class StreakService {
   // (mis. runtutan 5 hari tapi bolong 2 hari di tengah).
   static const String _riwayatDzikirKey = 'streak_dzikir_riwayat';
   static const String _riwayatQuranKey = 'streak_quran_riwayat';
+
+  /// Prefs: hari yang cuma selesai SATU dzikir (pagi saja atau petang saja).
+  ///
+  /// Harinya TETAP dihitung sebagai runtutan (lihat `_perbaruiRuntutanDzikir`)
+  /// — penanda ini hanya untuk tampilan: bulatannya digambar setengah kuning
+  /// setengah biru, supaya jelas bahwa sesi yang lain terlewat.
+  static const String _riwayatSebagianKey = 'streak_dzikir_riwayat_sebagian';
 
   /// Berapa tanggal terakhir yang disimpan. Cukup untuk beberapa minggu ke
   /// belakang, tapi tidak tumbuh tanpa batas.
@@ -164,11 +172,14 @@ class StreakService {
   /// Memakai minggu kalender, bukan "7 hari terakhir", supaya posisinya tetap
   /// dan mudah dibaca: hari yang sama selalu ada di kolom yang sama.
   /// [tanggalTuntas] berisi tanggal berformat `yyyy-MM-dd`.
+  /// [tanggalSebagian] berisi hari yang cuma selesai sebagian (dzikir: baru
+  /// satu sesi) — harinya tetap dihitung runtutan, tapi bulatannya setengah.
   ///
   /// Fungsi murni — bisa diuji tanpa HP.
   static List<HariStreak> mingguIni({
     required DateTime sekarang,
     required Set<String> tanggalTuntas,
+    Set<String>? tanggalSebagian,
   }) {
     final DateTime hariIni = hari(sekarang);
 
@@ -179,7 +190,13 @@ class StreakService {
 
     return <HariStreak>[
       for (int i = 0; i < 7; i++)
-        _hariKe(senin: senin, i: i, hariIni: hariIni, tuntas: tanggalTuntas),
+        _hariKe(
+          senin: senin,
+          i: i,
+          hariIni: hariIni,
+          tuntas: tanggalTuntas,
+          sebagian: tanggalSebagian ?? const <String>{},
+        ),
     ];
   }
 
@@ -188,12 +205,22 @@ class StreakService {
     required int i,
     required DateTime hariIni,
     required Set<String> tuntas,
+    required Set<String> sebagian,
   }) {
     final DateTime tanggal = senin.add(Duration(days: i));
+    final String kunci = _formatTanggal(tanggal);
+    final bool adasebagian = sebagian.contains(kunci);
+
+    // Hari yang ada di daftar "sebagian" TIDAK boleh dianggap penuh walau
+    // tanggalnya juga tercatat di daftar tuntas: daftar tuntas memuat SEMUA
+    // hari yang dihitung sebagai runtutan, termasuk yang cuma satu sesi.
+    final bool penuh = tuntas.contains(kunci) && !adasebagian;
+
     return HariStreak(
       tanggal: tanggal,
       label: labelHari[i],
-      tuntas: tuntas.contains(_formatTanggal(tanggal)),
+      tuntas: penuh,
+      sebagian: !penuh && adasebagian,
       hariIni: tanggal == hariIni,
       masaDepan: tanggal.isAfter(hariIni),
     );
@@ -202,14 +229,19 @@ class StreakService {
   /// Menyusun daftar pengingat penyelamat runtutan untuk beberapa hari ke depan.
   ///
   /// Hanya dipasang pada jam [NotificationService.jamPengingatStreak], dan
-  /// HARI INI dilewati kalau semuanya sudah tuntas — supaya tidak ada
-  /// pengingat yang berbunyi untuk pekerjaan yang sudah selesai.
+  /// HARI INI dilewati kalau [kekurangan] kosong — supaya tidak ada pengingat
+  /// yang berbunyi untuk pekerjaan yang sudah selesai.
+  ///
+  /// ⚠️ [kekurangan] HARUS berisi hal yang memang MASIH BISA DIKEJAR saat
+  /// pengingatnya berbunyi. Dzikir pagi misalnya sudah mustahil dikerjakan
+  /// kalau pengingatnya baru muncul sore hari, jadi jangan dimasukkan —
+  /// menagih sesuatu yang tidak mungkin hanya membuat notifikasinya terasa
+  /// salah. Penyaringan itu dilakukan pemanggilnya (lihat
+  /// `pastikanPengingatStreak`), karena butuh tahu jam pengingatnya.
   ///
   /// Fungsi murni: tidak menyentuh plugin notifikasi.
   static List<PengingatStreak> rencanaPengingatStreak({
-    required bool hariIniTuntas,
-    required bool dzikirTuntas,
-    required bool quranTuntas,
+    required Set<BagianRuntutan> kekurangan,
     required int runtutanTertinggi,
     DateTime? sekarang,
     int hariKeDepan = NotificationService.hariPengingatStreakKeDepan,
@@ -218,8 +250,9 @@ class StreakService {
     final rencana = <PengingatStreak>[];
 
     for (int h = 0; h < hariKeDepan; h++) {
-      // Hari ini tidak perlu dijadwalkan kalau sudah beres semuanya.
-      if (h == 0 && hariIniTuntas) continue;
+      // Hari ini tidak perlu dijadwalkan kalau tidak ada lagi yang bisa
+      // dikejar.
+      if (h == 0 && kekurangan.isEmpty) continue;
 
       final tanggal = hari(saat).add(Duration(days: h));
       rencana.add(
@@ -234,11 +267,14 @@ class StreakService {
           judul: runtutanTertinggi > 0
               ? '🔥 Runtutanmu belum tuntas hari ini'
               : '🔥 Yuk mulai runtutan hari ini',
-          isi: _isiPengingatStreak(
-            runtutanTertinggi: runtutanTertinggi,
-            dzikirTuntas: h == 0 && dzikirTuntas,
-            quranTuntas: h == 0 && quranTuntas,
-          ),
+          // Untuk hari-hari berikutnya kekurangannya belum bisa diketahui,
+          // jadi memakai pesan umum.
+          isi: h == 0
+              ? _isiPengingatStreak(
+                  kekurangan: kekurangan,
+                  runtutanTertinggi: runtutanTertinggi,
+                )
+              : _isiPengingatUmum(runtutanTertinggi: runtutanTertinggi),
         ),
       );
     }
@@ -246,27 +282,38 @@ class StreakService {
     return rencana;
   }
 
-  /// Isi notifikasi, disesuaikan dengan apa yang MASIH kurang.
+  /// Isi notifikasi HARI INI, menyebut apa saja yang masih kurang.
   static String _isiPengingatStreak({
+    required Set<BagianRuntutan> kekurangan,
     required int runtutanTertinggi,
-    required bool dzikirTuntas,
-    required bool quranTuntas,
   }) {
-    final sisa = <String>[
-      if (!dzikirTuntas) 'dzikir pagi & sore',
-      if (!quranTuntas)
-        '$ayatMinimalTerjemahan ayat atau $halamanMinimalMushaf halaman',
-    ];
-
-    if (sisa.isEmpty) {
+    if (kekurangan.isEmpty) {
       return 'Alhamdulillah, semua sudah tuntas hari ini. 🌙';
     }
+
+    // Diurutkan mengikuti urutan enum supaya kalimatnya tidak berubah-ubah
+    // urutannya antar pemanggilan.
+    final List<BagianRuntutan> urut = kekurangan.toList()
+      ..sort(
+        (BagianRuntutan a, BagianRuntutan b) => a.index.compareTo(b.index),
+      );
 
     final pembuka = runtutanTertinggi > 0
         ? 'Runtutan $runtutanTertinggi hari bisa putus kalau hari ini terlewat. '
         : 'Belum ada runtutan hari ini. ';
 
-    return '${pembuka}Tinggal ${sisa.join(' dan ')}.';
+    return '${pembuka}Tinggal '
+        '${urut.map((BagianRuntutan b) => b.keterangan).join(' dan ')}.';
+  }
+
+  /// Isi notifikasi untuk hari-hari BERIKUTNYA (kekurangannya belum diketahui).
+  static String _isiPengingatUmum({required int runtutanTertinggi}) {
+    if (runtutanTertinggi > 0) {
+      return 'Runtutan $runtutanTertinggi hari bisa putus kalau hari ini '
+          'terlewat. Lengkapi dzikir pagi & petang serta baca Al-Qur\'an.';
+    }
+    return 'Mulai runtutan hari ini: dzikir pagi & petang serta baca '
+        'Al-Qur\'an.';
   }
 
   // =====================================================================
@@ -304,9 +351,25 @@ class StreakService {
         prefs.getString(_dzikirSoreKey) == hariIni;
   }
 
-  /// Menambah runtutan dzikir kalau hari ini sudah pagi + sore.
+  /// Apakah SUDAH ADA minimal satu dzikir yang tuntas hari ini.
+  ///
+  /// Inilah syarat runtutan dzikir — bukan harus pagi + sore.
+  Future<bool> adaDzikirHariIni() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hariIni = _formatTanggal(DateTime.now());
+    return prefs.getString(_dzikirPagiKey) == hariIni ||
+        prefs.getString(_dzikirSoreKey) == hariIni;
+  }
+
+  /// Menambah runtutan dzikir untuk hari ini.
+  ///
+  /// ⚠️ Cukup SALAH SATU sesi (pagi ATAU petang) — bukan harus keduanya.
+  /// Alasannya: tiap sesi punya batas waktu sendiri, jadi user yang
+  /// menyelesaikan dzikir pagi lalu kehabisan waktu untuk petang tidak boleh
+  /// kehilangan runtutannya. Hari yang cuma satu sesi ditandai "sebagian"
+  /// supaya bulatannya digambar setengah.
   Future<void> _perbaruiRuntutanDzikir() async {
-    if (!await dzikirHariIniTuntas()) return;
+    if (!await adaDzikirHariIni()) return;
 
     final prefs = await SharedPreferences.getInstance();
     await _catatRuntutan(
@@ -314,6 +377,38 @@ class StreakService {
       kunciJumlah: _runtutanDzikirKey,
       kunciTerakhir: _runtutanDzikirTerakhirKey,
       kunciRiwayat: _riwayatDzikirKey,
+    );
+
+    // Kalau ternyata sekarang sudah lengkap, tanda "sebagian"-nya DIHAPUS —
+    // jadi bulatannya berubah jadi penuh tanpa perlu campur tangan user.
+    await _perbaruiRiwayatSebagian(
+      prefs,
+      sebagian: !await dzikirHariIniTuntas(),
+    );
+  }
+
+  /// Menambah/menghapus tanggal hari ini dari daftar "sebagian".
+  Future<void> _perbaruiRiwayatSebagian(
+    SharedPreferences prefs, {
+    required bool sebagian,
+  }) async {
+    final String hariIni = _formatTanggal(DateTime.now());
+    final List<String> daftar = _bacaRiwayat(
+      prefs.getString(_riwayatSebagianKey),
+    );
+    final bool sudahAda = daftar.contains(hariIni);
+
+    if (sebagian == sudahAda) return;
+
+    if (sebagian) {
+      daftar.add(hariIni);
+    } else {
+      daftar.remove(hariIni);
+    }
+
+    await prefs.setString(
+      _riwayatSebagianKey,
+      jsonEncode(_pangkasRiwayat(daftar)),
     );
   }
 
@@ -486,6 +581,9 @@ class StreakService {
       progresQuran: progres,
       tanggalDzikir: _bacaRiwayat(prefs.getString(_riwayatDzikirKey)).toSet(),
       tanggalQuran: _bacaRiwayat(prefs.getString(_riwayatQuranKey)).toSet(),
+      tanggalDzikirSebagian: _bacaRiwayat(
+        prefs.getString(_riwayatSebagianKey),
+      ).toSet(),
     );
   }
 
@@ -528,14 +626,32 @@ class StreakService {
     }
 
     final RingkasanStreak data = await ringkasan();
-    final bool dzikirTuntas = data.dzikirHariIniTuntas;
-    final bool quranTuntas = data.progresQuran.cukup;
+
+    // Yang ditagih HANYA yang masih bisa dikerjakan saat pengingatnya
+    // berbunyi. Dzikir pagi tutup pukul 11:00, sedangkan pengingat runtutan
+    // berbunyi lebih sore dari itu — menagih dzikir pagi di sore hari hanya
+    // membuat notifikasinya terasa salah.
+    final DateTime waktuPengingat = DateTime(
+      DateTime.now().year,
+      DateTime.now().month,
+      DateTime.now().day,
+      NotificationService.jamPengingatStreak,
+    );
+
+    final Set<BagianRuntutan> kekurangan = <BagianRuntutan>{
+      if (!data.pagiTuntas &&
+          DzikirWaktu.masihDalamWaktu(isPagi: true, sekarang: waktuPengingat))
+        BagianRuntutan.dzikirPagi,
+      if (!data.soreTuntas &&
+          DzikirWaktu.masihDalamWaktu(isPagi: false, sekarang: waktuPengingat))
+        BagianRuntutan.dzikirPetang,
+      if (!data.progresQuran.cukup) BagianRuntutan.quran,
+    };
 
     final String sidik = [
       _formatTanggal(DateTime.now()),
-      dzikirTuntas,
-      quranTuntas,
       data.tertinggi,
+      kekurangan.map((BagianRuntutan b) => b.name).join(','),
     ].join('|');
 
     if (prefs.getString(_sidikPengingatKey) == sidik) return;
@@ -543,9 +659,7 @@ class StreakService {
     await NotificationService().batalPengingatStreak();
 
     final List<PengingatStreak> rencana = rencanaPengingatStreak(
-      hariIniTuntas: dzikirTuntas && quranTuntas,
-      dzikirTuntas: dzikirTuntas,
-      quranTuntas: quranTuntas,
+      kekurangan: kekurangan,
       runtutanTertinggi: data.tertinggi,
     );
 
@@ -618,6 +732,7 @@ class RingkasanStreak {
     required this.progresQuran,
     this.tanggalDzikir = const <String>{},
     this.tanggalQuran = const <String>{},
+    this.tanggalDzikirSebagian = const <String>{},
   });
 
   /// Panjang runtutan dzikir yang masih berlaku (0 = belum ada / sudah putus).
@@ -639,6 +754,10 @@ class RingkasanStreak {
   final Set<String> tanggalDzikir;
   final Set<String> tanggalQuran;
 
+  /// Tanggal yang cuma selesai SATU dzikir (pagi saja atau petang saja).
+  /// Harinya tetap dihitung sebagai runtutan, tapi bulatannya setengah.
+  final Set<String> tanggalDzikirSebagian;
+
   /// Runtutan terpanjang dari keduanya — dipakai untuk nada pengingat.
   int get tertinggi => dzikir > quran ? dzikir : quran;
 
@@ -648,13 +767,12 @@ class RingkasanStreak {
 
 /// Satu hari di dalam kartu bulatan per-hari.
 ///
-/// Hasil dari [StreakService.mingguIni] — fungsi murni itu menyusun daftar ini
-/// tanpa membaca penyimpanan, supaya bisa diuji tanpa HP.
 class HariStreak {
   const HariStreak({
     required this.tanggal,
     required this.label,
     required this.tuntas,
+    required this.sebagian,
     required this.hariIni,
     required this.masaDepan,
   });
@@ -664,11 +782,36 @@ class HariStreak {
   /// Label pendek hari, mis. `Sen`.
   final String label;
 
-  /// Hari ini sudah tuntas.
+  /// Hari ini tuntas PENUH (untuk dzikir: pagi dan petang dua-duanya).
   final bool tuntas;
+
+  /// Hari ini cuma tuntas SEBAGIAN (untuk dzikir: baru satu sesi).
+  /// Digambar setengah kuning setengah biru.
+  final bool sebagian;
 
   final bool hariIni;
 
   /// Hari ini belum terjadi (masih di depan dalam minggu ini).
   final bool masaDepan;
+}
+
+/// Bagian runtutan yang bisa masih kurang pada suatu hari.
+///
+/// Dipakai pengingat penyelamat runtutan untuk menyebut APA yang masih
+/// tertinggal, bukan cuma "belum tuntas".
+///
+/// ⚠️ [keterangan] ikut menentukan bunyi notifikasi — jangan diubah tanpa
+/// memeriksa `test/streak_test.dart`.
+enum BagianRuntutan {
+  dzikirPagi('dzikir pagi'),
+  dzikirPetang('dzikir petang'),
+  quran(
+    '${StreakService.ayatMinimalTerjemahan} ayat atau '
+    '${StreakService.halamanMinimalMushaf} halaman',
+  );
+
+  const BagianRuntutan(this.keterangan);
+
+  /// Sebutan bagian ini di dalam kalimat notifikasi.
+  final String keterangan;
 }
