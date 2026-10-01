@@ -25,7 +25,7 @@ class AppInfo {
 
   /// Nomor build, yaitu bagian SESUDAH tanda `+` pada `version:` di pubspec.
   /// Angka ini yang dibaca Google Play sebagai `versionCode`.
-  static const String nomorBuild = '7';
+  static const String nomorBuild = '8';
 
   /// Teks versi siap tampil, mis. `1.0.0 (build 6)`.
   static const String versiLengkap = '$versi (build $nomorBuild)';
