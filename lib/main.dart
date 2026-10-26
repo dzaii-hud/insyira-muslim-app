@@ -5,7 +5,9 @@ import 'config.dart';
 import 'router/app_router.dart';
 import 'services/notification_navigator.dart';
 import 'services/notification_service.dart';
+import 'services/sira_pendamping.dart';
 import 'theme/app_theme.dart';
+import 'widgets/sira_layer.dart';
 
 // Global key untuk akses state dari mana saja
 final GlobalKey<_InsyiraAppState> appKey = GlobalKey<_InsyiraAppState>();
@@ -29,6 +31,10 @@ void main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final isDarkMode = prefs.getBool('is_dark_mode') ?? true;
+
+  // Pilihan pengguna soal maskot pendamping dibaca sebelum layar pertama
+  // muncul, supaya Sira tidak sempat berkedip tampil lalu hilang.
+  await SiraPendamping.instance.muat();
 
   // Menekan notifikasi harus membuka halaman yang bersangkutan.
   //
@@ -82,6 +88,10 @@ class _InsyiraAppState extends State<InsyiraApp> {
       darkTheme: AppTheme.darkTheme,
       themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
       routerConfig: appRouter,
+      // Sira dipasang di sini, bukan di tiap halaman: satu tempat, posisi
+      // selalu sama, dan halaman baru otomatis ikut ditemani tanpa disentuh.
+      builder: (BuildContext context, Widget? child) =>
+          SiraLayer(child: child ?? const SizedBox.shrink()),
     );
   }
 }

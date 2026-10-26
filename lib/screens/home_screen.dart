@@ -21,6 +21,7 @@ import '../services/notification_navigator.dart';
 import '../services/widget_service.dart';
 import '../widgets/pengumuman_banner.dart';
 import '../services/notification_service.dart';
+import '../services/sira_pendamping.dart';
 import '../services/streak_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/kajian_card_background.dart';
@@ -171,6 +172,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // Dijepit ke rentang yang sah supaya URL yang salah (mis. `?tab=99`)
     // tidak membuat aplikasi error.
     _selectedIndex = widget.initialTab.clamp(0, kNavDestinations.length - 1);
+    // Sira perlu tahu tab mana yang terbuka; ini tidak terbaca dari URL karena
+    // berpindah tab tidak mengubah alamat.
+    SiraPendamping.instance.laporkanTabHome(_selectedIndex);
     WidgetsBinding.instance.addObserver(this);
     _notificationService.init();
 
@@ -833,6 +837,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() {
       _selectedIndex = index;
     });
+
+    // Tips Sira berbeda untuk tiap tab, jadi perpindahan tab ikut dilaporkan.
+    SiraPendamping.instance.laporkanTabHome(index);
 
     // Angka runtutan disegarkan setiap kali tab berpindah: user bisa saja
     // baru menyelesaikan dzikir atau membaca beberapa ayat di tab lain.

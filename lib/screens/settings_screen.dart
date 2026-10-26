@@ -8,11 +8,13 @@ import '../app_info.dart';
 import '../router/app_router.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
+import '../services/sira_pendamping.dart';
 import '../services/streak_service.dart';
 import '../services/widget_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/responsive_content.dart';
+import '../widgets/sira_mascot.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -31,6 +33,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Widget layar utama — pengguna boleh memilih salah satu atau keduanya.
   bool _widgetSholat = true;
   bool _widgetKajian = true;
+
+  /// Apakah maskot pendamping (Sira) ditampilkan.
+  bool _siraAktif = true;
   final NotificationService _notificationService = NotificationService();
   final StreakService _streakService = StreakService();
 
@@ -513,6 +518,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _pengingatRuntutan = prefs.getBool('enable_streak_reminder') ?? true;
       _widgetSholat = prefs.getBool(WidgetService.prefWidgetSholat) ?? true;
       _widgetKajian = prefs.getBool(WidgetService.prefWidgetKajian) ?? true;
+      _siraAktif = prefs.getBool(SiraPendamping.kunciAktif) ?? true;
     });
   }
 
@@ -590,6 +596,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
       value
           ? 'Widget jadwal kajian aktif — diisi otomatis saat Home dimuat'
           : 'Widget jadwal kajian dimatikan',
+    );
+  }
+
+  /// Menyalakan/mematikan maskot pendamping Sira.
+  Future<void> _toggleSira(bool value) async {
+    await SiraPendamping.instance.setAktif(value);
+    if (mounted) setState(() => _siraAktif = value);
+
+    if (!mounted) return;
+    _showSnackBar(
+      value
+          ? 'Sira kembali menemanimu di halaman utama'
+          : 'Sira disembunyikan dari layar',
     );
   }
 
@@ -938,6 +957,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 value: _isDarkMode,
                 onChanged: _toggleTheme,
+                activeThumbColor: AppColors.getGoldLeaf(context),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // ===================== SECTION MASKOT =====================
+            Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Theme.of(context).dividerColor),
+              ),
+              child: SwitchListTile(
+                title: Row(
+                  children: [
+                    const SiraMascot(ukuran: 26, animasi: false),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Sira, maskot pendamping',
+                        style: TextStyle(
+                          color: AppColors.getTextPrimary(context),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                subtitle: Text(
+                  'Lentera kecil di pojok layar yang menjelaskan fitur di '
+                  'halaman yang sedang kamu buka.',
+                  style: TextStyle(
+                    color: AppColors.getOnSurfaceVariant(context),
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+                value: _siraAktif,
+                onChanged: _toggleSira,
                 activeThumbColor: AppColors.getGoldLeaf(context),
               ),
             ),

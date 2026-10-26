@@ -15,6 +15,7 @@ import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
 import '../screens/tonton_screen.dart';
+import '../services/sira_observer.dart';
 
 /// Daftar alamat (URL) halaman aplikasi.
 ///
@@ -143,6 +144,10 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 final GoRouter appRouter = GoRouter(
   initialLocation: AppRoutes.splash,
   navigatorKey: appNavigatorKey,
+
+  // Sira perlu tahu kapan ada lembar bawah / dialog di atas halaman, supaya
+  // bisa menyembunyikan diri selama itu.
+  observers: <NavigatorObserver>[SiraObserver()],
 
   // Mencetak log navigasi saat mode debug saja — berguna untuk melacak
   // masalah back/forward di web.
