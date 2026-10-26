@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<title>Insyira Muslim App — Sahabat ibadah harianmu</title>
+<meta name="description" content="Insyira menemani hari seorang Muslim: jadwal sholat dan adzan, Al-Quran, arah kiblat, dzikir, sampai kajian — dalam satu aplikasi yang tenang.">
+<meta name="theme-color" content="#0C3A2C">
+<link rel="icon" href="aset/favicon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+
+<style>
+/* =====================================================================
+   LANDING PAGE PENGENALAN — Insyira Muslim App
+   Gaya: EDITORIAL (majalah), bukan "kartu-kartu seragam".
+   Yang sengaja DIHINDARI karena bikin tampak seperti template buatan mesin:
+     - kisi kartu berisi ikon di dalam kotak bulat seragam
+     - semua kotak memakai radius besar yang sama
+     - judul + paragraf + 3 kartu, diulang tiap bagian
+   Yang dipakai sebagai gantinya:
+     - pemisah GARIS RAMBUT + penomoran (01…07), bukan kotak berwarna
+     - bentuk tegas (radius 4–6px), bukan kapsul
+     - fotografi asli (latar sholat) sebagai bidang
+     - judul SERIF, badan teks SANS, label huruf kapital berspasi
+   Warna tetap mengikuti lib/theme/app_theme.dart.
+   ===================================================================== */
+
+:root {
+  --tinta:       #16241F;
+  --hijau-tua:   #0C3A2C;
+  --hijau:       #16654F;
+  --emas:        #A87C33;
+  --emas-terang: #E4C98B;
+  --kertas:      #FAF8F3;
+  --kertas-2:    #F1EBE0;
+  --garis:       #E2D9C9;
+  --lembut:      #5D6B64;
+
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans:  "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --arab:  "Amiri", "Scheherazade New", "Traditional Arabic", serif;
+
+  --lebar: 1120px;
+  --sisi: clamp(20px, 4vw, 40px);
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--kertas);
+  color: var(--tinta);
+  font-family: var(--sans);
+  font-size: 16.5px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img { max-width: 100%; display: block; }
+a { color: inherit; }
+
+.wadah {
+  width: 100%;
+  max-width: var(--lebar);
+  margin-inline: auto;
+  padding-inline: var(--sisi);
+}
+
+/* Label kecil di atas judul — dipakai konsisten di seluruh halaman */
+.label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--emas);
+  margin-bottom: 14px;
+}
+
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; color: var(--tinta); }
+
+/* ===================== BILAH ATAS ===================== */
+.bilah {
+  position: absolute; inset: 0 0 auto 0; z-index: 10;
+  padding-block: 22px;
+}
+.bilah .wadah { display: flex; align-items: center; gap: 18px; }
+.merek {
+  display: flex; align-items: center; gap: 11px;
+  color: #fff; text-decoration: none;
+  font-family: var(--serif); font-size: 19px; font-weight: 600;
+}
+.merek img { width: 28px; height: 28px; flex: none; }
+.bilah .kanan { margin-inline-start: auto; }
+.tautan-masuk {
+  color: rgba(255,255,255,.9); text-decoration: none;
+  font-size: 14.5px; font-weight: 500;
+  padding-bottom: 2px; border-bottom: 1px solid rgba(255,255,255,.28);
+  transition: border-color .2s, color .2s;
+}
+.tautan-masuk:hover { color: #fff; border-color: var(--emas-terang); }
+
+/* ===================== HERO ===================== */
+.hero {
+  position: relative;
+  background: linear-gradient(168deg, #0E4433 0%, #0A392B 52%, #072C21 100%);
+  color: #fff;
+  padding: clamp(120px, 15vw, 168px) 0 0;
+  overflow: hidden;
+}
+/* Motif geometri: garis tipis berulang, bukan hiasan mengambang */
+.hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(120% 80% at 50% -10%, rgba(228,201,139,.13), transparent 62%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.055' stroke-width='1'%3E%3Crect x='21' y='21' width='42' height='42'/%3E%3Crect x='21' y='21' width='42' height='42' transform='rotate(45 42 42)'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: auto, 84px 84px;
+}
+.hero .wadah { position: relative; text-align: center; }
+
+/* Logo asli. Sudutnya sudah tembus pandang (lihat test-file/siapkan-logo-prototipe.py),
+   jadi bayangannya WAJIB drop-shadow, BUKAN box-shadow — box-shadow akan
+   menggambar kotak di belakang logo yang membulat. */
+.logo-hero {
+  width: 108px; height: 108px; margin: 0 auto 28px;
+  filter: drop-shadow(0 0 1px rgba(255,255,255,.3))
+          drop-shadow(0 14px 28px rgba(0,0,0,.45));
+}
+
+.hero h1 {
+  font-size: clamp(34px, 6vw, 58px);
+  line-height: 1.06;
+  letter-spacing: -.022em;
+  color: #fff;
+  margin: 0 auto 20px;
+  max-width: 16em;
+}
+.pembuka {
+  font-size: clamp(16px, 1.9vw, 18px);
+  line-height: 1.72;
+  color: rgba(255,255,255,.82);
+  max-width: 36em;
+  margin: 0 auto 34px;
+}
+
+/* Ayat: dibatasi dua garis rambut, bukan batang warna di tepi */
+.ayat {
+  margin: 0 auto 38px;
+  max-width: 32em;
+  padding: 26px 24px;
+  border-top: 1px solid rgba(228,201,139,.3);
+  border-bottom: 1px solid rgba(228,201,139,.3);
+}
+.ayat .arab {
+  font-family: var(--arab);
+  font-size: clamp(28px, 3.6vw, 38px);
+  line-height: 1.9;
+  display: block;
+  direction: rtl;
+  color: var(--emas-terang);
+  margin-bottom: 4px;
+}
+.ayat .terjemah {
+  font-family: var(--serif);
+  font-size: 17px; font-style: italic;
+  color: rgba(255,255,255,.92); margin: 0;
+}
+.ayat .sumber {
+  display: block; margin-top: 10px;
+  font-size: 11.5px; letter-spacing: .18em; text-transform: uppercase;
+  color: rgba(255,255,255,.5);
+}
+
+/* Tombol: bentuk tegas, bukan kapsul */
+.aksi { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.tombol {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 15px 26px; border-radius: 4px;
+  font-size: 15px; font-weight: 600; text-decoration: none;
+  border: 1px solid transparent;
+  transition: background .18s, border-color .18s, color .18s, transform .18s;
+}
+.tombol:focus-visible { outline: 3px solid var(--emas-terang); outline-offset: 3px; }
+.tombol-utama { background: var(--emas-terang); color: #33240A; }
+.tombol-utama:hover { background: #EFDBA9; transform: translateY(-1px); }
+.tombol-garis { border-color: rgba(255,255,255,.34); color: #fff; }
+.tombol-garis:hover { border-color: rgba(255,255,255,.7); background: rgba(255,255,255,.05); }
+/* Tombol belum tersedia: matikan interaksi supaya tidak tampak "hidup" */
+.tombol[aria-disabled="true"] { cursor: not-allowed; pointer-events: none; }
+
+.pilar {
+  list-style: none; margin: 26px 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 26px;
+  font-size: 13.5px; color: rgba(255,255,255,.66);
+}
+.pilar li { display: flex; align-items: center; gap: 8px; }
+.pilar li::before {
+  content: ""; width: 4px; height: 4px; border-radius: 50%;
+  background: var(--emas); flex: none;
+}
+
+/* Tiga tangkapan layar — komposisi, bukan satu gambar datar di tengah */
+.trio {
+  position: relative;
+  display: flex; justify-content: center; align-items: flex-end;
+  margin-top: clamp(46px, 6vw, 72px);
+  padding-bottom: clamp(40px, 6vw, 84px);
+}
+.trio .ponsel { width: 25%; max-width: 214px; }
+.trio .ponsel.samping { opacity: .95; transform: translateY(34px); }
+.trio .ponsel.besar {
+  width: 31%; max-width: 268px;
+  margin-inline: -2.2%;
+  z-index: 2; transform: translateY(-10px);
+}
+
+.ponsel {
+  background: #0A0F0D;
+  border-radius: 30px;
+  padding: 7px;
+  box-shadow: 0 24px 48px rgba(0,0,0,.42), 0 0 0 1px rgba(255,255,255,.09) inset;
+}
+/* ⚠️ JANGAN pakai aspect-ratio + object-fit di sini: pada lebar sempit
+   keduanya membuat tangkapan layar terpotong kiri-kanan.
+   Biarkan gambar mengikuti rasionya sendiri (width 100% + height auto). */
+.ponsel img { width: 100%; height: auto; border-radius: 24px; }
+.ponsel.kecil { border-radius: 22px; padding: 5px; }
+.ponsel.kecil img { border-radius: 17px; }
+
+/* ===================== BAGIAN UMUM ===================== */
+.bagian { padding: clamp(66px, 9vw, 104px) 0; }
+.bagian.putih  { background: #fff; }
+.bagian.kertas { background: var(--kertas-2); }
+
+.kepala { text-align: center; max-width: 44em; margin: 0 auto clamp(40px, 5vw, 62px); }
+.kepala h2 {
+  font-size: clamp(26px, 3.9vw, 40px);
+  line-height: 1.16; letter-spacing: -.017em;
+  margin: 0 0 16px;
+}
+.kepala p { color: var(--lembut); margin: 0; font-size: 16.5px; }
+
+/* ===================== 2. SEKILAS ===================== */
+/* Rata KIRI di dalam kolom yang tetap di tengah halaman.
+   Paragraf panjang yang rata tengah sulit dibaca dan justru jadi ciri khas
+   halaman buatan mesin — jadi hanya JUDUL yang rata tengah. */
+.sekilas-teks { max-width: 58ch; margin-inline: auto; text-align: left; }
+.sekilas-teks p { margin: 0 0 18px; }
+.sekilas-teks p:last-child { margin-bottom: 0; }
+.sekilas-teks .tarik {
+  font-family: var(--serif);
+  font-size: clamp(19px, 2.4vw, 23px);
+  line-height: 1.5;
+  color: var(--hijau-tua);
+}
+
+/* Empat pernyataan dipisah GARIS RAMBUT — tanpa kotak, tanpa latar.
+   ⚠️ Jumlahnya 4 (dulu 3) supaya selalu terbagi rata: 1 kolom, 2×2, atau 4×1.
+   Dengan 3 item, pada lebar menengah grid menjadi 2 kolom dan menyisakan
+   satu sel kosong di baris kedua.
+   ⚠️ Jumlah kolom ditulis EKSPLISIT, tidak memakai auto-fit — kalau auto-fit,
+   aturan border-left mengenai sel yang salah (sel di kolom pertama ikut
+   mendapat garis, sehingga muncul garis nyasar di tepi kiri). */
+.pilar-sekilas {
+  display: grid;
+  grid-template-columns: 1fr;
+  margin-top: clamp(38px, 5vw, 56px);
+  border-top: 1px solid var(--garis);
+}
+.pilar-sekilas > div {
+  padding: 24px 0; text-align: center;
+  border-top: 1px solid var(--garis);
+}
+.pilar-sekilas > div:first-child { border-top: 0; }
+.pilar-sekilas h3 { margin: 0 0 8px; font-size: 16.5px; }
+.pilar-sekilas p { margin: 0; font-size: 14.5px; color: var(--lembut); }
+
+@media (min-width: 620px) {
+  .pilar-sekilas { grid-template-columns: 1fr 1fr; }
+  .pilar-sekilas > div { padding: 28px clamp(14px, 2.4vw, 26px); }
+  .pilar-sekilas > div:nth-child(-n+2) { border-top: 0; }
+  .pilar-sekilas > div:nth-child(even) { border-left: 1px solid var(--garis); }
+}
+@media (min-width: 1040px) {
+  .pilar-sekilas { grid-template-columns: repeat(4, 1fr); }
+  .pilar-sekilas > div { border-top: 0; }
+  .pilar-sekilas > div + div { border-left: 1px solid var(--garis); }
+}
+
+/* ===================== 3. SATU HARI ===================== */
+.hari { list-style: none; margin: 0; padding: 0; }
+.hari > li {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 26px;
+  padding-block: clamp(38px, 5vw, 54px);
+  border-top: 1px solid var(--garis);
+}
+.hari > li:first-child { border-top: 0; }
+.hari .teks { text-align: center; }
+
+/* Nomor besar berongga — penanda urutan, bukan kotak ikon */
+.nomor {
+  display: block;
+  font-family: var(--serif);
+  font-size: clamp(38px, 5vw, 54px);
+  line-height: 1;
+  font-weight: 400;
+  color: transparent;
+  -webkit-text-stroke: 1px #CDBFA6;
+  margin-bottom: 4px;
+}
+.jam {
+  display: block;
+  font-size: 11.5px; font-weight: 600;
+  letter-spacing: .2em; text-transform: uppercase;
+  color: var(--emas); margin-bottom: 10px;
+}
+.hari h3 { font-size: clamp(21px, 2.6vw, 26px); margin: 0 0 12px; letter-spacing: -.012em; }
+.hari p { margin: 0 auto 16px; max-width: 42ch; color: #3C4A44; }
+.label-fitur {
+  display: inline-block;
+  font-size: 13px; font-weight: 600;
+  color: var(--hijau);
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(22,101,79,.35);
+}
+.hari .gambar { display: flex; justify-content: center; }
+.hari .gambar .ponsel.kecil { max-width: 190px; }
+
+/* Kartu runtutan — menampilkan fitur yang paling khas */
+.runtutan {
+  width: 100%; max-width: 350px;
+  background: #fff;
+  border: 1px solid var(--garis);
+  border-radius: 6px;
+  padding: 20px 22px;
+}
+.runtutan .judul { font-family: var(--serif); font-size: 16.5px; margin-bottom: 16px; }
+.runtutan .judul span {
+  display: block; font-family: var(--sans);
+  font-size: 13px; color: var(--lembut); margin-top: 3px;
+}
+.pekan { display: flex; justify-content: space-between; gap: 6px; }
+.hari-ke { text-align: center; font-size: 11px; color: var(--lembut); }
+.bulat {
+  width: 29px; height: 29px; border-radius: 50%;
+  margin: 0 auto 6px; display: grid; place-items: center;
+  color: #fff; font-size: 14px; font-weight: 700;
+}
+.bulat.tuntas   { background: #2E7D9A; }
+.bulat.sebagian { background: linear-gradient(90deg, #C98A2E 0 50%, #2E7D9A 50% 100%); }
+.bulat.kini     { background: #C98A2E; }
+.bulat.belum    { background: transparent; border: 1px dashed #C9C2B4; }
+.runtutan .catatan { margin: 16px 0 0; font-size: 13px; color: var(--lembut); }
+
+/* ===================== 4. FITUR ===================== */
+/* Satu kolom dibatasi lebar, supaya tidak menyisakan sel kosong
+   (jumlah fiturnya ganjil: 7) dan terbaca seperti daftar isi. */
+.daftar-fitur {
+  list-style: none; margin: 0 auto; padding: 0;
+  max-width: 50em;
+  display: grid; grid-template-columns: 1fr;
+}
+.daftar-fitur li {
+  display: grid; grid-template-columns: auto 1fr;
+  column-gap: 16px; align-items: start;
+  padding: 22px 0;
+  border-top: 1px solid var(--garis);
+}
+.daftar-fitur .angka {
+  font-family: var(--serif); font-size: 13px; color: var(--emas);
+  padding-top: 4px; letter-spacing: .06em;
+}
+.daftar-fitur h3 { margin: 0 0 5px; font-size: 18px; }
+.daftar-fitur p { margin: 0; font-size: 14.5px; color: var(--lembut); }
+
+/* ===================== 5. PRINSIP ===================== */
+.prinsip { background: var(--hijau-tua); color: #fff; position: relative; overflow: hidden; }
+.prinsip::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.05' stroke-width='1'%3E%3Crect x='21' y='21' width='42' height='42'/%3E%3Crect x='21' y='21' width='42' height='42' transform='rotate(45 42 42)'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 84px 84px;
+}
+.prinsip .wadah { position: relative; }
+.prinsip .label { color: var(--emas-terang); }
+.prinsip h2 { color: #fff; }
+.prinsip .kepala p { color: rgba(255,255,255,.72); }
+/* Empat prinsip — sama polanya dengan .pilar-sekilas:
+   kolom eksplisit supaya garis pemisah tidak nyasar ke kolom pertama. */
+.baris-prinsip {
+  display: grid; grid-template-columns: 1fr;
+  border-top: 1px solid rgba(255,255,255,.16);
+}
+.baris-prinsip > div {
+  padding: 24px 0; text-align: center;
+  border-top: 1px solid rgba(255,255,255,.16);
+}
+.baris-prinsip > div:first-child { border-top: 0; }
+.baris-prinsip h3 { color: #fff; font-size: 18px; margin: 0 0 9px; }
+.baris-prinsip p { margin: 0; font-size: 14.5px; color: rgba(255,255,255,.72); }
+
+@media (min-width: 620px) {
+  .baris-prinsip { grid-template-columns: 1fr 1fr; }
+  .baris-prinsip > div { padding: 28px clamp(14px, 2.4vw, 26px); }
+  .baris-prinsip > div:nth-child(-n+2) { border-top: 0; }
+  .baris-prinsip > div:nth-child(even) { border-left: 1px solid rgba(255,255,255,.16); }
+}
+@media (min-width: 1040px) {
+  .baris-prinsip { grid-template-columns: repeat(4, 1fr); }
+  .baris-prinsip > div { border-top: 0; }
+  .baris-prinsip > div + div { border-left: 1px solid rgba(255,255,255,.16); }
+}
+
+/* ===================== 6. ASAL-USUL ===================== */
+/* Ilustrasi asli (bukan gradasi). Sisi kanan sengaja dibiarkan terlihat,
+   teksnya dibatasi ke kiri supaya tidak menutupi gambarnya. */
+.cerita {
+  position: relative;
+  background: #0A2D22 url("aset/bg_maghrib.webp") center 55% / cover no-repeat;
+  padding: clamp(78px, 11vw, 132px) 0;
+}
+.cerita::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(100deg,
+    rgba(5,28,21,.97) 0%, rgba(5,28,21,.92) 40%, rgba(5,28,21,.26) 100%);
+}
+.cerita .wadah { position: relative; }
+.cerita .kepala { text-align: left; max-width: 32em; margin-inline: 0; }
+.cerita .label { color: var(--emas-terang); }
+.cerita h2 { color: #fff; }
+.cerita-teks { max-width: 38em; text-align: left; margin-inline: 0; }
+.cerita-teks p { color: rgba(255,255,255,.82); margin: 0 0 18px; font-size: 16.5px; }
+.cerita-teks .salam {
+  font-family: var(--serif); font-style: italic;
+  color: var(--emas-terang); font-size: 18px; margin-top: 26px;
+}
+
+/* ===================== 7. AJAKAN ===================== */
+.ajakan { background: var(--kertas-2); text-align: center; }
+.ajakan .kepala { margin-bottom: 32px; }
+.ajakan .tombol-utama { background: var(--hijau); color: #fff; }
+.ajakan .tombol-utama:hover { background: #1B7A5F; }
+.ajakan .tombol-garis { border-color: var(--hijau); color: var(--hijau); }
+.ajakan .tombol-garis:hover { border-color: var(--hijau); background: rgba(22,101,79,.07); }
+.bagikan { margin-top: 26px; font-size: 14px; color: var(--lembut); }
+.bagikan a { color: var(--hijau); text-underline-offset: 4px; }
+
+/* ===================== KAKI ===================== */
+.kaki {
+  background: var(--kertas);
+  border-top: 1px solid var(--garis);
+  padding: 34px 0 46px;
+  font-size: 13.5px; color: var(--lembut);
+}
+.kaki .wadah {
+  display: flex; flex-wrap: wrap; gap: 12px 26px;
+  align-items: center; justify-content: center;
+}
+.kaki-merek { display: inline-flex; align-items: center; gap: 9px; color: var(--tinta); }
+.kaki-merek img { width: 18px; height: 18px; }
+.kaki a { color: var(--lembut); text-decoration: none; }
+.kaki a:hover { color: var(--hijau); text-decoration: underline; text-underline-offset: 3px; }
+.catatan-prototipe {
+  flex-basis: 100%; text-align: center;
+  padding-top: 18px; margin-top: 4px;
+  border-top: 1px solid var(--garis);
+  font-size: 12px; color: #9AA39D;
+}
+
+/* ===================== LAYAR SEMPIT ===================== */
+@media (max-width: 640px) {
+  /* Di layar sempit cukup satu ponsel — kalau tiga, jadi terlalu kecil */
+  .trio .ponsel.samping { display: none; }
+  .trio .ponsel.besar { width: 62%; max-width: 250px; margin-inline: 0; }
+}
+
+@media (max-width: 900px) {
+  /* Di layar sempit ilustrasi tidak bisa "dihindari" oleh teks, jadi
+     peredupnya dibuat rata supaya tulisan tetap terbaca. */
+  .cerita::before {
+    background: linear-gradient(180deg, rgba(5,28,21,.95), rgba(5,28,21,.87));
+  }
+}
+
+/* ===================== LAYAR LEBAR ===================== */
+@media (min-width: 900px) {
+  /* Garis waktu zigzag: sisi kiri-kanan bergantian.
+     ⚠️ Teks WAJIB dibungkus <div class="teks">; kalau elemen teks dibiarkan
+     jadi anak langsung <li>, tiap elemen menjadi baris grid tersendiri dan
+     barisnya ikut melar setinggi gambar. */
+  .hari > li {
+    grid-template-columns: 1fr 1fr;
+    column-gap: clamp(40px, 6vw, 88px);
+    align-items: center;
+  }
+  .hari > li .teks { text-align: left; }
+  .hari > li .teks p { margin-inline: 0; }
+  .hari > li .gambar { justify-content: flex-start; }
+  .hari > li .gambar .ponsel.kecil { max-width: 232px; }
+
+  /* langkah genap: gambar di kiri, teks di kanan */
+  .hari > li.ganjil .teks   { order: 2; }
+  .hari > li.ganjil .gambar { order: 1; justify-content: flex-end; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== BILAH ATAS ===================== -->
+<header class="bilah">
+  <div class="wadah">
+    <a class="merek" href="#">
+      <img src="aset/logo-tanda.png" width="128" height="128" alt="" aria-hidden="true">
+      Insyira
+    </a>
+    <div class="kanan">
+      <a class="tautan-masuk" href="https://insyiramuslimapp.pusatoleolehpekanbaru.id/#/login">Masuk</a>
+    </div>
+  </div>
+</header>
+
+<!-- ===================== 1. HERO ===================== -->
+<section class="hero">
+  <div class="wadah">
+    <img class="logo-hero" src="aset/logo.webp" width="256" height="256"
+         alt="Logo Insyira Muslim App">
+
+    <h1>Sahabat ibadah harianmu.</h1>
+
+    <p class="pembuka">
+      Insyira menemani hari seorang Muslim — dari bangun sebelum Subuh sampai
+      menutup malam. Jadwal sholat dan adzan, Al-Quran, arah kiblat, dzikir,
+      sampai kajian — dalam satu aplikasi yang tenang.
+    </p>
+
+    <blockquote class="ayat">
+      <span class="arab">إِنَّ مَعَ الْعُسْرِ يُسْرًا</span>
+      <p class="terjemah">&ldquo;Sesungguhnya bersama kesulitan ada kemudahan.&rdquo;</p>
+      <span class="sumber">QS. Al-Insyirah 94:6</span>
+    </blockquote>
+
+    <div class="aksi">
+      <a class="tombol tombol-utama" href="https://play.google.com/store/apps/details?id=id.insyira.muslimapp"
+         aria-disabled="true" tabindex="-1">Segera hadir di Google Play</a>
+      <a class="tombol tombol-garis" href="https://insyiramuslimapp.pusatoleolehpekanbaru.id">
+        Coba versi web
+      </a>
+    </div>
+
+    <ul class="pilar">
+      <li>Tanpa langganan</li>
+      <li>Tanpa iklan</li>
+      <li>Bisa dipakai tanpa akun</li>
+    </ul>
+  </div>
+
+  <div class="trio">
+    <div class="ponsel samping">
+      <img src="aset/dzikir.webp" width="480" height="1067" alt="Halaman dzikir Insyira">
+    </div>
+    <div class="ponsel besar">
+      <img src="aset/beranda.webp" width="480" height="1067"
+           alt="Tampilan beranda Insyira: kartu Shalat Selanjutnya dan baris lima waktu sholat">
+    </div>
+    <div class="ponsel samping">
+      <img src="aset/quran.webp" width="480" height="1067" alt="Halaman Al-Quran Insyira">
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 2. SEKILAS ===================== -->
+<section class="bagian" id="sekilas">
+  <div class="wadah">
+    <div class="kepala">
+      <span class="label">Tentang</span>
+      <h2>Sekilas tentang Insyira</h2>
+    </div>
+
+    <div class="sekilas-teks">
+      <p>
+        Insyira tumbuh dari lingkup kecil: musholla dan kajian di Pekanbaru.
+        Kami butuh satu aplikasi yang sederhana untuk ibadah harian — yang bisa
+        dipakai kakek-nenek tanpa merasa bodoh, dan bisa dibuka anak muda tanpa
+        merasa sedang berjualan.
+      </p>
+      <p class="tarik">
+        Yang kami buat bukan aplikasi yang mengumpulkan apa saja. Kami pilih yang
+        benar-benar dipakai tiap hari, lalu kami buat ia tenang.
+      </p>
+    </div>
+
+    <div class="pilar-sekilas">
+      <div>
+        <h3>Dibuat oleh komunitas</h3>
+        <p>Bukan korporasi. Berangkat dari kebutuhan jamaah sendiri.</p>
+      </div>
+      <div>
+        <h3>Satu aplikasi, bukan lima</h3>
+        <p>Biar tidak berpindah-pindah hanya untuk tahu waktu sholat.</p>
+      </div>
+      <div>
+        <h3>Mudah dipakai</h3>
+        <p>Tidak ada menu berlapis, tidak perlu diajari dulu.</p>
+      </div>
+      <div>
+        <h3>Terus dirawat</h3>
+        <p>Diperbaiki dari masukan sahabat yang memakainya.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 3. SATU HARI ===================== -->
+<section class="bagian kertas" id="sehari">
+  <div class="wadah">
+    <div class="kepala">
+      <span class="label">Keseharian</span>
+      <h2>Satu hari bersama Insyira</h2>
+      <p>Bukan daftar fitur. Ini keseharian yang kami bayangkan saat membuatnya.</p>
+    </div>
+
+    <ol class="hari">
+      <li>
+        <div class="teks">
+          <span class="nomor">01</span>
+          <span class="jam">Sebelum Subuh</span>
+          <h3>Bangun</h3>
+          <p>
+            Adzan berbunyi untuk waktu sholat hari itu — bukan jam tetap yang bisa
+            meleset puluhan menit. Jadwal dihitung di perangkatmu, lokasi tidak
+            dikirim ke mana pun.
+          </p>
+          <span class="label-fitur">Jadwal sholat + adzan</span>
+        </div>
+        <div class="gambar">
+          <div class="ponsel kecil">
+            <img src="aset/beranda.webp" alt="Kartu Shalat Selanjutnya beserta baris lima waktu sholat">
+          </div>
+        </div>
+      </li>
+
+      <li class="ganjil">
+        <div class="teks">
+          <span class="nomor">02</span>
+          <span class="jam">Pagi</span>
+          <h3>Sebelum memulai hari</h3>
+          <p>
+            Dzikir pagi dengan penghitung sederhana. Selesai, runtutanmu bertambah —
+            tanpa perlu mengingat-ingat apakah kemarin sudah atau belum.
+          </p>
+          <span class="label-fitur">Dzikir pagi</span>
+        </div>
+        <div class="gambar">
+          <div class="ponsel kecil">
+            <img src="aset/dzikir.webp" alt="Halaman dzikir dengan penghitung dan pilihan sesi pagi serta petang">
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="teks">
+          <span class="nomor">03</span>
+          <span class="jam">Sepanjang hari</span>
+          <h3>Kapan pun senggang</h3>
+          <p>
+            Buka Al-Quran dalam mode mushaf (font per halaman) atau mode terjemahan.
+            Bacaan terakhirmu tersimpan, jadi tidak perlu mencari dari awal.
+          </p>
+          <span class="label-fitur">Al-Quran: mushaf &amp; terjemahan</span>
+        </div>
+        <div class="gambar">
+          <div class="ponsel kecil">
+            <img src="aset/quran.webp" alt="Halaman Quran dengan kartu Terakhir Dibaca dan daftar surah">
+          </div>
+        </div>
+      </li>
+
+      <li class="ganjil">
+        <div class="teks">
+          <span class="nomor">04</span>
+          <span class="jam">Di perjalanan</span>
+          <h3>Di tempat asing</h3>
+          <p>
+            Kompas kiblat sederhana untuk memastikan arah sholat, di mana pun
+            kamu berada.
+          </p>
+          <span class="label-fitur">Arah kiblat</span>
+        </div>
+        <div class="gambar">
+          <div class="ponsel kecil">
+            <img src="aset/qibla.webp" alt="Halaman kiblat dengan piringan kompas dan penunjuk arah kiblat">
+          </div>
+        </div>
+      </li>
+
+      <li>
+        <div class="teks">
+          <span class="nomor">05</span>
+          <span class="jam">Sore</span>
+          <h3>Menutup hari</h3>
+          <p>
+            Dzikir sore yang waktunya dijaga. Kalau hari ini belum lengkap, Insyira
+            mengingatkan dengan lembut — dan runtutanmu tidak dihukum kalau kamu
+            terlewat beberapa hari.
+          </p>
+          <span class="label-fitur">Dzikir sore + runtutan yang memaklumi</span>
+        </div>
+        <div class="gambar">
+          <div class="runtutan">
+            <div class="judul">
+              Runtutan minggu ini
+              <span>7 hari terakhir sambung · boleh bolong sampai 3 hari</span>
+            </div>
+            <div class="pekan">
+              <div class="hari-ke"><div class="bulat tuntas">&#10003;</div>Sen</div>
+              <div class="hari-ke"><div class="bulat tuntas">&#10003;</div>Sel</div>
+              <div class="hari-ke"><div class="bulat sebagian"></div>Rab</div>
+              <div class="hari-ke"><div class="bulat tuntas">&#10003;</div>Kam</div>
+              <div class="hari-ke"><div class="bulat tuntas">&#10003;</div>Jum</div>
+              <div class="hari-ke"><div class="bulat kini"></div>Sab</div>
+              <div class="hari-ke"><div class="bulat belum"></div>Min</div>
+            </div>
+            <p class="catatan">
+              Hari Sabtu masih bisa dikejar sampai dzikir petang tutup.
+            </p>
+          </div>
+        </div>
+      </li>
+
+      <li class="ganjil">
+        <div class="teks">
+          <span class="nomor">06</span>
+          <span class="jam">Malam</span>
+          <h3>Menambah ilmu</h3>
+          <p>
+            Jadwal kajian di sekitarmu, pengingat 30 menit sebelum mulai, fawaidh
+            singkat untuk menemani, dan siaran Insyira TV.
+          </p>
+          <span class="label-fitur">Kajian + Fawaidh + Insyira TV</span>
+        </div>
+        <div class="gambar">
+          <div class="ponsel kecil">
+            <img src="aset/kajian.webp" alt="Halaman kajian dengan kartu jadwal kajian dan foto ustadz">
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ===================== 4. FITUR ===================== -->
+<section class="bagian putih" id="fitur">
+  <div class="wadah">
+    <div class="kepala">
+      <span class="label">Isi aplikasi</span>
+      <h2>Yang ada di dalamnya</h2>
+      <p>Tujuh hal yang benar-benar kami pakai sendiri, bukan daftar panjang yang tidak pernah dibuka.</p>
+    </div>
+
+    <ul class="daftar-fitur">
+      <li>
+        <span class="angka">01</span>
+        <div>
+          <h3>Jadwal sholat</h3>
+          <p>Dihitung di perangkat, lengkap dengan pengingat adzan.</p>
+        </div>
+      </li>
+      <li>
+        <span class="angka">02</span>
+        <div>
+          <h3>Al-Quran</h3>
+          <p>Mushaf per halaman dan mode terjemahan.</p>
+        </div>
+      </li>
+      <li>
+        <span class="angka">03</span>
+        <div>
+          <h3>Arah kiblat</h3>
+          <p>Kompas sederhana untuk memastikan arah.</p>
+        </div>
+      </li>
+      <li>
+        <span class="angka">04</span>
+        <div>
+          <h3>Dzikir</h3>
+          <p>Dzikir pagi &amp; sore dengan penghitung dan waktu yang dijaga.</p>
+        </div>
+      </li>
+      <li>
+        <span class="angka">05</span>
+        <div>
+          <h3>Runtutan harian</h3>
+          <p>Catatan dzikir &amp; bacaan Al-Quran, yang tidak menghukum saat terlewat.</p>
+        </div>
+      </li>
+      <li>
+        <span class="angka">06</span>
+        <div>
+          <h3>Kajian &amp; Fawaidh</h3>
+          <p>Jadwal kajian dengan pengingat, plus fawaidh singkat untuk dibaca kapan saja.</p>
+        </div>
+      </li>
+      <li>
+        <span class="angka">07</span>
+        <div>
+          <h3>Insyira TV</h3>
+          <p>Video &amp; siaran langsung dari kanal resmi Insyira.</p>
+        </div>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===================== 5. PRINSIP ===================== -->
+<section class="bagian prinsip" id="jaga">
+  <div class="wadah">
+    <div class="kepala">
+      <span class="label">Prinsip</span>
+      <h2>Yang kami jaga</h2>
+      <p>
+        Ada beberapa hal yang tidak kami tawar-tawar — bukan karena bagus untuk
+        promosi, tapi karena memang begitu seharusnya.
+      </p>
+    </div>
+
+    <div class="baris-prinsip">
+      <div>
+        <h3>Tenang</h3>
+        <p>Tidak ada iklan, tidak ada notifikasi yang menyuruh-nyuruh.</p>
+      </div>
+      <div>
+        <h3>Tidak menuntut</h3>
+        <p>Bisa dipakai tanpa akun. Data ibadahmu tinggal di HP-mu.</p>
+      </div>
+      <div>
+        <h3>Memaklumi</h3>
+        <p>Terlewat beberapa hari? Runtutanmu tidak dihukum.</p>
+      </div>
+      <div>
+        <h3>Terbuka</h3>
+        <p>Ada yang salah atau kurang pas? Kabari kami — kami perbaiki.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 6. ASAL-USUL ===================== -->
+<section class="cerita" id="cerita">
+  <div class="wadah">
+    <div class="kepala">
+      <span class="label">Asal-usul</span>
+      <h2>Dari musholla, untuk kita bersama</h2>
+    </div>
+
+    <div class="cerita-teks">
+      <p>
+        Insyira dimulai dari satu pertanyaan sederhana di musholla: kenapa untuk
+        sekadar tahu jam sholat, dzikir, dan jadwal kajian, kita harus membuka
+        lima aplikasi yang masing-masing menawarkan iklan?
+      </p>
+      <p>
+        Aplikasi ini pertama kali dipakai sendiri oleh keluarga dan jamaah di
+        sekitar kami. Ketika ternyata menolong, rasanya sayang kalau hanya kami
+        yang memakai.
+      </p>
+      <p>
+        Maka kami bagikan — bukan karena kami punya banyak, tapi karena tidak ada
+        alasan untuk menahannya.
+      </p>
+      <p class="salam">&mdash; Barakallahu fiikum.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 7. AJAKAN ===================== -->
+<section class="bagian ajakan" id="coba">
+  <div class="wadah">
+    <div class="kepala">
+      <h2>Kalau berkenan, silakan dicoba</h2>
+      <p>Tidak perlu buru-buru. Buka saja saat kamu butuh menemani ibadah hari ini.</p>
+    </div>
+
+    <div class="aksi">
+      <a class="tombol tombol-utama" href="https://play.google.com/store/apps/details?id=id.insyira.muslimapp"
+         aria-disabled="true" tabindex="-1">Segera hadir di Google Play</a>
+      <a class="tombol tombol-garis" href="https://insyiramuslimapp.pusatoleolehpekanbaru.id">
+        Buka versi web
+      </a>
+    </div>
+
+    <p class="bagikan">
+      Kalau menurutmu bermanfaat, boleh dibagikan —
+      <a href="https://wa.me/?text=Insyira%20Muslim%20App%20%E2%80%94%20sahabat%20ibadah%20harian%3A%20https%3A%2F%2Finsyiramuslimapp.pusatoleolehpekanbaru.id">via WhatsApp</a>
+    </p>
+  </div>
+</section>
+
+<!-- ===================== KAKI ===================== -->
+<footer class="kaki">
+  <div class="wadah">
+    <span class="kaki-merek">
+      <img src="aset/logo-tanda.png" width="128" height="128" alt="" aria-hidden="true">
+      Insyira Muslim App &middot; Insyira Pekanbaru
+    </span>
+    <a href="https://api.pusatoleolehpekanbaru.id/privacy.html">Kebijakan Privasi</a>
+    <a href="https://api.pusatoleolehpekanbaru.id/hapus-akun.html">Cara Menghapus Akun</a>
+    <a href="mailto:contact@pusatoleholehpekanbaru.id">Hubungi kami</a>
+    <span class="catatan-prototipe">Prototipe tampilan &middot; naskah dapat berubah</span>
+  </div>
+</footer>
+
+</body>
+</html>
