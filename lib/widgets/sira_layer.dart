@@ -7,14 +7,15 @@ import '../services/sira_pendamping.dart';
 import '../services/tips_sira.dart';
 import '../theme/app_theme.dart';
 import 'sira_mascot.dart';
+import 'sira_pengenalan.dart';
 import 'sira_tips_sheet.dart';
 
 /// Lapisan tempat Sira menemani pengguna.
 ///
 /// Dipasang sekali di `MaterialApp.builder`, jadi Sira tidak perlu ditambahkan
 /// ke tiap halaman dan posisinya selalu sama. Konsekuensinya: lapisan ini
-/// berada DI ATAS Navigator, sehingga membuka lembar tips harus lewat
-/// `appNavigatorKey` (lihat [_KehadiranSira._buka]).
+/// berada DI ATAS Navigator, sehingga membuka lembar (tips, menu, perkenalan)
+/// harus lewat `appNavigatorKey`.
 class SiraLayer extends StatefulWidget {
   const SiraLayer({super.key, required this.child});
 
@@ -25,6 +26,8 @@ class SiraLayer extends StatefulWidget {
 }
 
 class _SiraLayerState extends State<SiraLayer> {
+  bool _sudahTawarkanPengenalan = false;
+
   @override
   void initState() {
     super.initState();
@@ -39,10 +42,38 @@ class _SiraLayerState extends State<SiraLayer> {
   void _ruteBerubah() {
     final String jalur = appRouter.routerDelegate.currentConfiguration.uri.path;
     if (jalur.isEmpty) return;
-    if (SiraPendamping.instance.rute.value == jalur) return;
 
-    SiraPendamping.instance.rute.value = jalur;
-    SiraPendamping.instance.laporkanTabHome(0);
+    if (SiraPendamping.instance.rute.value != jalur) {
+      SiraPendamping.instance.rute.value = jalur;
+      SiraPendamping.instance.laporkanTabHome(0);
+    }
+
+    _tawarkanPengenalan();
+  }
+
+  /// Menampilkan perkenalan Sira sekali, saat pengguna pertama kali sampai di
+  /// beranda.
+  ///
+  /// Dicek juga [SiraPendamping.aktif]: pengguna yang pernah mematikan Sira
+  /// tidak perlu diperkenalkan lagi.
+  void _tawarkanPengenalan() {
+    if (_sudahTawarkanPengenalan) return;
+
+    final SiraPendamping sira = SiraPendamping.instance;
+    if (sira.pengenalanSelesai.value) return;
+    if (!sira.aktif.value) return;
+    if (sira.rute.value != AppRoutes.home) return;
+
+    _sudahTawarkanPengenalan = true;
+
+    // Ditunda satu bingkai: Home baru saja dipasang, dan navigator belum siap
+    // menerima lembar baru sebelum bingkai pertamanya selesai.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final BuildContext? konteks =
+          appNavigatorKey.currentState?.overlay?.context;
+      if (konteks == null) return;
+      unawaited(bukaPengenalanSira(konteks));
+    });
   }
 
   @override
@@ -57,8 +88,26 @@ class _SiraLayerState extends State<SiraLayer> {
   }
 }
 
-class _KehadiranSira extends StatelessWidget {
+class _KehadiranSira extends StatefulWidget {
   const _KehadiranSira();
+
+  @override
+  State<_KehadiranSira> createState() => _KehadiranSiraState();
+}
+
+class _KehadiranSiraState extends State<_KehadiranSira> {
+  /// Sisi gelembung. Cukup besar untuk disentuh jari, cukup kecil untuk tidak
+  /// menutupi banyak isi halaman.
+  static const double _ukuran = 62;
+
+  /// Jarak minimum dari tepi layar.
+  static const double _tepi = 10;
+
+  /// Posisi sementara (piksel) selama jari masih menempel.
+  ///
+  /// Dipisah dari posisi tersimpan supaya geseran setengah jalan tidak ikut
+  /// tersimpan kalau jarinya terlepas.
+  Offset? _seret;
 
   /// Halaman yang boleh ditemani Sira.
   ///
@@ -83,6 +132,7 @@ class _KehadiranSira extends StatelessWidget {
         sira.adaLapisanDiAtas,
         sira.rute,
         sira.tabHome,
+        sira.posisi,
       ]),
       builder: (BuildContext context, Widget? _) {
         final String rute = sira.rute.value;
@@ -103,18 +153,18 @@ class _KehadiranSira extends StatelessWidget {
             tips != null &&
             _bolehDitemani(rute);
 
+        // Saat tidak tampil, Sira benar-benar keluar dari pohon widget — bukan
+        // sekadar transparan — supaya pembaca layar tidak menemukan tombol
+        // tak terlihat.
+        if (!tampil) return const SizedBox.shrink();
+
+        final Rect area = _area(context, rute);
+        final Offset posisi = _posisi(context, area, sira.posisi.value);
+
         return Positioned(
-          right: 14,
-          bottom: _jarakBawah(context, rute),
-          // Visibility (bukan sekadar opacity 0): maskot yang tersembunyi
-          // harus benar-benar keluar dari pohon widget, supaya pembaca layar
-          // tidak menemukan tombol tak terlihat.
-          child: Visibility(
-            visible: tampil,
-            child: tips == null
-                ? const SizedBox.shrink()
-                : _tombolSira(context, tips),
-          ),
+          left: posisi.dx,
+          top: posisi.dy,
+          child: _gelembung(context, tips),
         );
       },
     );
@@ -123,60 +173,239 @@ class _KehadiranSira extends StatelessWidget {
   bool _bolehDitemani(String rute) =>
       _ruteDiizinkan.contains(rute) || rute.startsWith('${AppRoutes.fawaidh}/');
 
-  /// Jarak dari bawah layar.
+  /// Ruang yang boleh ditempati gelembung.
   ///
-  /// Di Home ada bilah menu bawah, jadi Sira duduk di atasnya supaya tidak
-  /// menutupi tombol navigasi.
-  double _jarakBawah(BuildContext context, String rute) {
-    final double aman = MediaQuery.paddingOf(context).bottom;
-    return aman + (rute == AppRoutes.home ? 86 : 18);
+  /// Di Home ruang bawahnya dipotong setinggi menu bawah, supaya Sira tidak
+  /// pernah menutupi tombol navigasi walaupun digeser ke paling bawah.
+  Rect _area(BuildContext context, String rute) {
+    final MediaQueryData mq = MediaQuery.of(context);
+    final double bawah = mq.padding.bottom + (rute == AppRoutes.home ? 78 : 0);
+
+    return Rect.fromLTRB(
+      _tepi,
+      mq.padding.top + _tepi,
+      mq.size.width - _ukuran - _tepi,
+      mq.size.height - bawah - _ukuran - _tepi,
+    );
   }
 
-  Widget _tombolSira(BuildContext context, TipsSira tips) {
+  /// Posisi gelembung (kiri-atas) dalam piksel.
+  ///
+  /// Posisi tersimpan berupa pecahan dari ukuran layar, bukan piksel, supaya
+  /// tetap masuk akal saat layar diputar atau dipakai di perangkat lain.
+  Offset _posisi(BuildContext context, Rect area, Offset? pecahan) {
+    if (_seret != null) return _batasi(_seret!, area);
+
+    if (pecahan == null) {
+      // Bawaan: pojok kanan bawah, di atas menu bawah.
+      return area.bottomRight;
+    }
+
+    final Size layar = MediaQuery.sizeOf(context);
+    return _batasi(
+      Offset(pecahan.dx * layar.width, pecahan.dy * layar.height),
+      area,
+    );
+  }
+
+  Offset _batasi(Offset posisi, Rect area) => Offset(
+    posisi.dx.clamp(area.left, area.right),
+    posisi.dy.clamp(area.top, area.bottom),
+  );
+
+  void _mulaiSeret(BuildContext context) {
+    final SiraPendamping sira = SiraPendamping.instance;
+    final Rect area = _area(context, sira.rute.value);
+
+    setState(() => _seret = _posisi(context, area, sira.posisi.value));
+  }
+
+  void _lanjutSeret(BuildContext context, DragUpdateDetails detail) {
+    final Offset? sekarang = _seret;
+    if (sekarang == null) return;
+
+    final Rect area = _area(context, SiraPendamping.instance.rute.value);
+    setState(() => _seret = _batasi(sekarang + detail.delta, area));
+  }
+
+  Future<void> _selesaiSeret(BuildContext context) async {
+    final Offset? posisi = _seret;
+    if (posisi == null) return;
+
+    final Size layar = MediaQuery.sizeOf(context);
+    setState(() => _seret = null);
+
+    await SiraPendamping.instance.simpanPosisi(
+      Offset(posisi.dx / layar.width, posisi.dy / layar.height),
+    );
+  }
+
+  Widget _gelembung(BuildContext context, TipsSira tips) {
     final Color emas = AppColors.getGoldLeaf(context);
     final Color latar = AppColors.getSurfaceContainerLow(context);
 
     return Semantics(
       button: true,
       label: 'Sira: ${tips.judul}',
-      child: Tooltip(
-        message: 'Tips dari Sira',
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _buka(tips),
-          child: Container(
-            width: 62,
-            height: 62,
-            decoration: BoxDecoration(
-              // Gelembung setengah tembus pandang. Sira melayang DI ATAS isi
-              // halaman; tanpa latar sendiri ia terbaca sebagai bagian dari
-              // kartu yang kebetulan berada di bawahnya.
-              color: latar.withValues(alpha: 0.92),
-              shape: BoxShape.circle,
-              border: Border.all(color: emas.withValues(alpha: 0.32)),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: const Center(child: SiraMascot(ukuran: 44)),
+      hint: 'Ketuk untuk tips, geser untuk memindahkan, tekan lama untuk opsi',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _bukaTips(tips),
+        onLongPress: _bukaMenu,
+        onPanStart: (_) => _mulaiSeret(context),
+        onPanUpdate: (DragUpdateDetails d) => _lanjutSeret(context, d),
+        onPanEnd: (_) => unawaited(_selesaiSeret(context)),
+        child: Container(
+          width: _ukuran,
+          height: _ukuran,
+          decoration: BoxDecoration(
+            // Gelembung setengah tembus pandang. Sira melayang DI ATAS isi
+            // halaman; tanpa latar sendiri ia terbaca sebagai bagian dari
+            // kartu yang kebetulan berada di bawahnya.
+            color: latar.withValues(alpha: 0.92),
+            shape: BoxShape.circle,
+            border: Border.all(color: emas.withValues(alpha: 0.32)),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
+          child: const Center(child: SiraMascot(ukuran: 44)),
         ),
       ),
     );
   }
 
-  void _buka(TipsSira tips) {
-    // Lapisan ini ada di atas Navigator, jadi `context` di sini tidak punya
-    // Navigator di atasnya. Overlay milik navigator dipakai supaya lembar
-    // tips tetap muncul di atas halaman yang sedang dibuka.
-    final BuildContext? konteks =
-        appNavigatorKey.currentState?.overlay?.context;
+  void _bukaTips(TipsSira tips) {
+    final BuildContext? konteks = _konteksNavigator();
     if (konteks == null) return;
 
     unawaited(bukaTipsSira(konteks, tips));
+  }
+
+  void _bukaMenu() {
+    final BuildContext? konteks = _konteksNavigator();
+    if (konteks == null) return;
+
+    unawaited(
+      showModalBottomSheet<void>(
+        context: konteks,
+        backgroundColor: Colors.transparent,
+        builder: (BuildContext context) => const _MenuSira(),
+      ),
+    );
+  }
+
+  /// Overlay milik navigator, dipakai karena lapisan ini ada DI ATAS Navigator.
+  BuildContext? _konteksNavigator() =>
+      appNavigatorKey.currentState?.overlay?.context;
+}
+
+/// Menu yang muncul saat Sira ditekan lama.
+class _MenuSira extends StatelessWidget {
+  const _MenuSira();
+
+  @override
+  Widget build(BuildContext context) {
+    final Color latar = AppColors.getSurfaceContainerLow(context);
+    final Color teks = AppColors.getTextPrimary(context);
+    final Color redup = AppColors.getOnSurfaceVariant(context);
+    final Color emas = AppColors.getGoldLeaf(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: latar,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 4),
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                color: redup.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+              child: Row(
+                children: <Widget>[
+                  const SiraMascot(ukuran: 44, animasi: false),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Atur Sira',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: teks,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: Icon(Icons.restart_alt_rounded, color: emas),
+              title: Text(
+                'Kembalikan ke pojok kanan bawah',
+                style: TextStyle(color: teks, fontSize: 14),
+              ),
+              onTap: () async {
+                final NavigatorState navigator = Navigator.of(context);
+                final ScaffoldMessengerState messenger = ScaffoldMessenger.of(
+                  context,
+                );
+
+                await SiraPendamping.instance.resetPosisi();
+                if (navigator.mounted) navigator.pop();
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Sira kembali ke pojok kanan bawah'),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.visibility_off_rounded, color: emas),
+              title: Text(
+                'Sembunyikan Sira',
+                style: TextStyle(color: teks, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Bisa dinyalakan lagi di Pengaturan',
+                style: TextStyle(color: redup, fontSize: 11.5),
+              ),
+              onTap: () async {
+                final NavigatorState navigator = Navigator.of(context);
+                final ScaffoldMessengerState messenger = ScaffoldMessenger.of(
+                  context,
+                );
+
+                await SiraPendamping.instance.setAktif(false);
+                if (navigator.mounted) navigator.pop();
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Sira disembunyikan. Nyalakan lagi kapan saja di '
+                      'Pengaturan.',
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
   }
 }

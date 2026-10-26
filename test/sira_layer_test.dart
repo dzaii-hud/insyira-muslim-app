@@ -23,6 +23,11 @@ void main() {
     SiraPendamping.instance.adaLapisanDiAtas.value = false;
     SiraPendamping.instance.rute.value = '';
     SiraPendamping.instance.laporkanTabHome(0);
+    SiraPendamping.instance.posisi.value = null;
+
+    // Perkenalan diuji terpisah; di sini dianggap sudah pernah dilihat supaya
+    // tidak menutupi halaman saat tes lain berjalan.
+    SiraPendamping.instance.pengenalanSelesai.value = true;
   });
 
   /// Memompa lapisan Sira lalu memindahkannya ke halaman [rute].
@@ -122,6 +127,73 @@ void main() {
 
     await tester.tap(find.byType(SiraMascot));
     await tester.pump(const Duration(milliseconds: 300));
+
+    expect(tester.takeException(), isNull);
+  });
+
+  /// Gelembung Sira (bukan gambar lenteranya) — bagian yang posisinya diatur
+  /// oleh lapisan ini.
+  Finder gelembungSira() => find
+      .ancestor(
+        of: find.byType(SiraMascot),
+        matching: find.byType(GestureDetector),
+      )
+      .first;
+
+  testWidgets('bisa digeser, dan posisi barunya diingat', (
+    WidgetTester tester,
+  ) async {
+    await pumpDiRute(tester, '/home');
+
+    final Offset awal = tester.getTopLeft(gelembungSira());
+
+    await tester.drag(gelembungSira(), const Offset(-150, -300));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Offset akhir = tester.getTopLeft(gelembungSira());
+    expect(akhir.dx, lessThan(awal.dx));
+    expect(akhir.dy, lessThan(awal.dy));
+
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    expect(prefs.getDouble(SiraPendamping.kunciPosisiX), isNotNull);
+    expect(prefs.getDouble(SiraPendamping.kunciPosisiY), isNotNull);
+    expect(SiraPendamping.instance.posisi.value, isNotNull);
+  });
+
+  testWidgets('posisi tersimpan dipakai lagi saat halaman dibuka', (
+    WidgetTester tester,
+  ) async {
+    // Posisi di tengah layar, disimpan sebagai pecahan.
+    SiraPendamping.instance.posisi.value = const Offset(0.3, 0.4);
+
+    await pumpDiRute(tester, '/home');
+
+    final Rect kotak = tester.getRect(gelembungSira());
+    final Size layar = tester.view.physicalSize / tester.view.devicePixelRatio;
+
+    expect(kotak.left / layar.width, closeTo(0.3, 0.01));
+    expect(kotak.top / layar.height, closeTo(0.4, 0.01));
+  });
+
+  testWidgets('tidak bisa digeser keluar layar', (WidgetTester tester) async {
+    await pumpDiRute(tester, '/home');
+
+    // Digeser jauh melewati tepi kanan & atas.
+    await tester.drag(gelembungSira(), const Offset(2000, -2000));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final Rect kotak = tester.getRect(gelembungSira());
+    expect(kotak.left, greaterThanOrEqualTo(0));
+    expect(kotak.top, greaterThanOrEqualTo(0));
+  });
+
+  testWidgets('tekan lama tidak membuat aplikasi error', (
+    WidgetTester tester,
+  ) async {
+    await pumpDiRute(tester, '/home');
+
+    await tester.longPress(find.byType(SiraMascot));
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(tester.takeException(), isNull);
   });

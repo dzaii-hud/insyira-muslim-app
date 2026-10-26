@@ -19,7 +19,6 @@ import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/notification_navigator.dart';
 import '../services/widget_service.dart';
-import '../widgets/pengumuman_banner.dart';
 import '../services/notification_service.dart';
 import '../services/sira_pendamping.dart';
 import '../services/streak_service.dart';
@@ -2105,9 +2104,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children: [
               _buildPrayerTimeHeader(),
               const SizedBox(height: 22),
-              // Pengumuman dari pengurus. Mengurus sendiri pengambilan dan
-              // penyembunyiannya, jadi tidak menambah keadaan di beranda.
-              const PengumumanBanner(),
+              // Pengumuman dari pengurus sudah tidak dipakai (Okt 2026) — Sira
+              // yang kini menyapa pengguna di halaman ini. Komponennya masih
+              // tersimpan di `widgets/pengumuman_banner.dart` kalau nanti
+              // diperlukan lagi.
               _buildMenuGrid(),
               const SizedBox(height: _sectionGap),
               _buildRuntutanHarian(),
