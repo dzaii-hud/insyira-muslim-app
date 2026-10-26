@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/dzikir_service.dart';
 import '../services/streak_service.dart';
 import '../theme/app_theme.dart';
 
@@ -10,7 +11,12 @@ import '../theme/app_theme.dart';
 /// 4×18 + judul 18 bold, kartu `cardColor` radius 16, garis `dividerColor`)
 /// supaya tidak terasa sebagai tambahan yang berdiri sendiri.
 class StreakCard extends StatelessWidget {
-  const StreakCard({super.key, required this.ringkasan, this.padaKetuk});
+  const StreakCard({
+    super.key,
+    required this.ringkasan,
+    this.padaKetuk,
+    this.sekarang,
+  });
 
   final RingkasanStreak ringkasan;
 
@@ -18,9 +24,15 @@ class StreakCard extends StatelessWidget {
   /// membuka tab Dzikir, `false` untuk tab Quran.
   final void Function(bool keDzikir)? padaKetuk;
 
+  /// Waktu yang dipakai menilai sesi dzikir mana yang masih terbuka.
+  /// `null` = waktu sekarang. Diisi di tes supaya hasilnya tidak berubah
+  /// menurut jam berapa tes itu dijalankan.
+  final DateTime? sekarang;
+
   @override
   Widget build(BuildContext context) {
     final Color emas = AppColors.getGoldLeaf(context);
+    final DateTime saat = sekarang ?? DateTime.now();
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -44,7 +56,7 @@ class StreakCard extends StatelessWidget {
                   judul: 'Dzikir',
                   runtutan: ringkasan.dzikir,
                   tuntasHariIni: ringkasan.dzikirHariIniTuntas,
-                  keterangan: _keteranganDzikir(),
+                  keterangan: _keteranganDzikir(saat),
                   keDzikir: true,
                 ),
               ),
@@ -66,8 +78,7 @@ class StreakCard extends StatelessWidget {
           if (ringkasan.dzikir == 0 && ringkasan.quran == 0) ...<Widget>[
             const SizedBox(height: 12),
             Text(
-              'Belum ada runtutan. Selesaikan dzikir pagi & sore serta baca '
-              'Al-Qur\'an hari ini untuk memulainya.',
+              _catatanBelumAdaRuntutan(saat),
               style: TextStyle(
                 fontSize: 11.5,
                 height: 1.5,
@@ -113,22 +124,73 @@ class StreakCard extends StatelessWidget {
     );
   }
 
-  /// Keterangan dzikir hari ini: mana yang sudah dan mana yang belum.
-  String _keteranganDzikir() {
+  /// Keterangan dzikir hari ini: mana yang sudah, mana yang belum, dan mana
+  /// yang sudah **terlewat** batas waktunya.
+  ///
+  /// ⚠️ Penting: sesi yang belum dikerjakan TETAPI sudah lewat batasnya bukan
+  /// lagi "belum" — kata "belum" menyiratkan masih bisa dikerjakan, padahal
+  /// tidak. Ini kejadian nyata dari laporan tester (5 Okt 2026): pukul 20:28
+  /// kartu ini masih menyuruh menyelesaikan dzikir pagi & sore, padahal
+  /// batasnya 11:00 dan 18:00.
+  String _keteranganDzikir(DateTime saat) {
     if (ringkasan.dzikirHariIniTuntas) return 'pagi & sore selesai';
 
-    // Sehari cukup SALAH SATU dzikir untuk dihitung sebagai runtutan (sesi
-    // yang lain bisa saja sudah lewat batas waktunya), jadi keadaannya
-    // disebut apa adanya.
-    final int jumlah =
-        (ringkasan.pagiTuntas ? 1 : 0) + (ringkasan.soreTuntas ? 1 : 0);
-    if (jumlah == 1) return 'baru 1 dari 2 dzikir';
+    final bool pagiBuka = DzikirWaktu.masihDalamWaktu(
+      isPagi: true,
+      sekarang: saat,
+    );
+    final bool soreBuka = DzikirWaktu.masihDalamWaktu(
+      isPagi: false,
+      sekarang: saat,
+    );
 
+    // Sehari cukup SALAH SATU dzikir untuk dihitung sebagai runtutan, jadi
+    // keadaannya disebut apa adanya.
     final List<String> belum = <String>[
-      if (!ringkasan.pagiTuntas) 'pagi',
-      if (!ringkasan.soreTuntas) 'sore',
+      if (!ringkasan.pagiTuntas && pagiBuka) 'pagi',
+      if (!ringkasan.soreTuntas && soreBuka) 'sore',
     ];
+    final List<String> lewat = <String>[
+      if (!ringkasan.pagiTuntas && !pagiBuka) 'pagi',
+      if (!ringkasan.soreTuntas && !soreBuka) 'sore',
+    ];
+
+    if (lewat.isNotEmpty && belum.isNotEmpty) {
+      return '${lewat.join(' & ')} terlewat · ${belum.join(' & ')} belum';
+    }
+    if (lewat.isNotEmpty) return 'terlewat: ${lewat.join(' & ')}';
+    if (belum.length == 1) return 'baru 1 dari 2 dzikir';
     return 'belum: ${belum.join(' & ')}';
+  }
+
+  /// Catatan di bawah kartu saat kedua runtutan masih nol.
+  ///
+  /// Tidak pernah menyuruh mengerjakan sesi dzikir yang sudah tutup.
+  String _catatanBelumAdaRuntutan(DateTime saat) {
+    final bool pagiBuka = DzikirWaktu.masihDalamWaktu(
+      isPagi: true,
+      sekarang: saat,
+    );
+    final bool soreBuka = DzikirWaktu.masihDalamWaktu(
+      isPagi: false,
+      sekarang: saat,
+    );
+
+    if (pagiBuka && soreBuka) {
+      return 'Belum ada runtutan. Selesaikan dzikir pagi & sore serta baca '
+          'Al-Qur\'an hari ini untuk memulainya.';
+    }
+    if (soreBuka) {
+      // Dzikir pagi sudah tutup — jangan disuruh lagi.
+      return 'Belum ada runtutan. Waktu dzikir pagi sudah lewat (batas '
+          '${DzikirWaktu.labelBatas(isPagi: true)}), tetapi dzikir petang '
+          'masih terbuka. Selesaikan dzikir petang serta baca Al-Qur\'an '
+          'hari ini untuk memulainya.';
+    }
+    return 'Belum ada runtutan. Waktu dzikir hari ini sudah lewat (pagi '
+        '${DzikirWaktu.labelBatas(isPagi: true)}, petang '
+        '${DzikirWaktu.labelBatas(isPagi: false)}). Baca Al-Qur\'an hari ini '
+        'untuk memulai runtutan, dzikir dilanjut besok yaa.';
   }
 
   Widget _buildSatu({

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../router/app_router.dart';
 import '../services/notification_service.dart';
 import '../services/youtube_service.dart';
 import '../theme/app_theme.dart';
@@ -87,21 +89,41 @@ class _NotificationCenterSheetState extends State<NotificationCenterSheet> {
     }
   }
 
+  /// Memutar siaran langsung DI DALAM aplikasi.
+  ///
+  /// Panel ini berupa lembar (bottom sheet), jadi harus ditutup dulu — kalau
+  /// tidak, halaman pemutar akan muncul di belakang panel dan panelnya tetap
+  /// menutupi layar.
+  ///
+  /// [GoRouter] diambil SEBELUM panel ditutup karena setelah `pop()`, `context`
+  /// milik panel sudah tidak dipakai lagi.
   Future<void> _bukaVideo(YouTubeVideo video) async {
-    final id = video.id.trim();
-    final Uri url = id.isEmpty
-        ? Uri.parse('https://www.youtube.com/channel/UCxYY8T_y2mAgQQCjYvWwZdw')
-        : Uri.parse('https://www.youtube.com/watch?v=$id');
+    final String id = video.id.trim();
+    final GoRouter router = GoRouter.of(context);
 
-    try {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Tidak dapat membuka YouTube')),
-        );
+    Navigator.of(context).pop();
+
+    // Tidak ada ID video → buka kanal di aplikasi YouTube.
+    if (id.isEmpty) {
+      final Uri kanal = Uri.parse(
+        'https://www.youtube.com/channel/UCxYY8T_y2mAgQQCjYvWwZdw',
+      );
+      try {
+        await launchUrl(kanal, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        // Kanal tidak bisa dibuka — tidak ada tindakan lain yang masuk akal.
       }
+      return;
     }
+
+    router.push(
+      AppRoutes.tontonVideo(
+        videoId: id,
+        judul: video.title,
+        kanal: video.channelTitle,
+        siaranLangsung: video.liveBroadcastContent == 'live',
+      ),
+    );
   }
 
   @override

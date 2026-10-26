@@ -953,8 +953,6 @@ class _DzikirScreenState extends State<DzikirScreen> {
                       size: 28,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Icon(Icons.bookmark_border, color: subTextColor, size: 24),
                 ],
               ),
             ],

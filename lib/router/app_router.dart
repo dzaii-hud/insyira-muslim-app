@@ -4,12 +4,17 @@ import 'package:go_router/go_router.dart';
 
 import '../screens/about_screen.dart';
 import '../screens/detail_surah_screen.dart';
+import '../config.dart';
+import '../screens/fawaidh_baca_screen.dart';
 import '../screens/fawaidh_screen.dart';
+import '../screens/fawaidh_saya_screen.dart';
+import '../screens/google_callback_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/register_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/splash_screen.dart';
+import '../screens/tonton_screen.dart';
 
 /// Daftar alamat (URL) halaman aplikasi.
 ///
@@ -30,9 +35,40 @@ class AppRoutes {
   static const String register = '/register';
   static const String home = '/home';
   static const String fawaidh = '/fawaidh';
+
+  /// Halaman khusus akun yang terdaftar sebagai ustadz, untuk mengisi dan
+  /// mengelola fawaidh miliknya sendiri.
+  static const String fawaidhSaya = '/fawaidh-saya';
+
+  /// Alamat halaman baca satu fawaidh.
+  ///
+  /// Data fawaidhnya boleh dititipkan lewat `extra` saat berpindah halaman,
+  /// supaya halaman baca langsung tampil tanpa menunggu jaringan. Kalau
+  /// alamatnya dibuka langsung (mis. dari tautan di web), halaman mengambil
+  /// datanya sendiri dari server.
+  static String bacaFawaidh(Object? id) => '/fawaidh/$id';
+
+  /// Tautan yang bisa dibagikan untuk sebuah video atau siaran langsung.
+  ///
+  /// Mengarah ke versi **WEB** aplikasi ini (`/#/tonton/<id>`), bukan ke
+  /// YouTube dan bukan ke aplikasi. Penerima tautan bisa langsung menonton di
+  /// halaman Insyira tanpa memasang apa pun.
+  static String tautanTonton(String videoId) =>
+      '${AppConfig.webBaseUrl}/#/tonton/$videoId';
   static const String settings = '/settings';
   static const String about = '/tentang';
+
+  /// Halaman pendarat setelah login Google lewat pengalihan browser (web).
+  ///
+  /// Backend mengalihkan ke sini lengkap dengan `?token=...`, jadi alamatnya
+  /// berbentuk `/#/auth/callback?token=...`.
+  static const String googleCallback = '/auth/callback';
+
   static const String surah = '/surah';
+
+  /// Halaman pemutar kajian DI DALAM aplikasi (video biasa & siaran
+  /// langsung). Dipakai lewat [tontonVideo].
+  static const String tonton = '/tonton';
 
   /// Alamat halaman detail surah.
   ///
@@ -56,10 +92,41 @@ class AppRoutes {
       },
     ).toString();
   }
+
+  /// Alamat halaman pemutar kajian.
+  ///
+  /// Contoh: `/tonton/dQw4w9WgXcQ?judul=...&kanal=...&live=1`.
+  ///
+  /// [judul] dan [kanal] hanya dipakai untuk tampilan, jadi keduanya boleh
+  /// dikosongkan — halaman tetap jalan karena yang wajib hanya ID videonya.
+  /// Nilai kosong otomatis tidak ikut ditulis supaya alamatnya tetap rapi.
+  static String tontonVideo({
+    required String videoId,
+    String? judul,
+    String? kanal,
+    bool siaranLangsung = false,
+  }) {
+    return Uri(
+      path: '$tonton/$videoId',
+      queryParameters: <String, String>{
+        if (judul != null && judul.trim().isNotEmpty) 'judul': judul,
+        if (kanal != null && kanal.trim().isNotEmpty) 'kanal': kanal,
+        if (siaranLangsung) 'live': '1',
+      },
+    ).toString();
+  }
 }
 
 /// Jumlah surah di Al-Quran — dipakai untuk memvalidasi nomor dari URL.
 const int _jumlahSurah = 114;
+
+/// Bentuk ID video YouTube yang dianggap sah.
+///
+/// ID video normalnya 11 karakter dari huruf, angka, `-`, dan `_`. Batasnya
+/// sengaja dilonggarkan (6–20) supaya ID istimewa tidak ikut ditolak, tetapi
+/// tetap cukup ketat untuk menolak alamat yang jelas bukan ID video — mis.
+/// `/tonton/abcd` atau tulisan berisi spasi.
+final RegExp _polaIdVideo = RegExp(r'^[A-Za-z0-9_-]{6,20}$');
 
 /// Kunci navigator global.
 ///
@@ -116,6 +183,35 @@ final GoRouter appRouter = GoRouter(
           const FawaidhScreen(),
     ),
     GoRoute(
+      // Halaman baca satu fawaidh. Angkanya divalidasi dulu: kalau bukan
+      // angka, pembaca dikembalikan ke daftar daripada melihat halaman kosong.
+      path: '/fawaidh/:id',
+      name: 'fawaidh-baca',
+      redirect: (BuildContext context, GoRouterState state) {
+        final int? id = int.tryParse(state.pathParameters['id'] ?? '');
+
+        return id == null ? AppRoutes.fawaidh : null;
+      },
+      builder: (BuildContext context, GoRouterState state) {
+        final int id = int.parse(state.pathParameters['id']!);
+        final Object? awal = state.extra;
+
+        return FawaidhBacaScreen(
+          // Kunci per-id: tanpa ini, membuka tulisan lain dari halaman baca
+          // bisa tetap menampilkan tulisan yang lama.
+          key: ValueKey<String>('fawaidh-baca-$id'),
+          id: id,
+          awal: awal is Map<String, dynamic> ? awal : null,
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.fawaidhSaya,
+      name: 'fawaidh-saya',
+      builder: (BuildContext context, GoRouterState state) =>
+          const FawaidhSayaScreen(),
+    ),
+    GoRoute(
       path: AppRoutes.settings,
       name: 'settings',
       builder: (BuildContext context, GoRouterState state) =>
@@ -126,6 +222,18 @@ final GoRouter appRouter = GoRouter(
       name: 'tentang',
       builder: (BuildContext context, GoRouterState state) =>
           const AboutScreen(),
+    ),
+
+    // Pendarat login Google lewat pengalihan browser (khusus web). Tidak ada
+    // sidebar/AppBar — halaman ini langsung mengalihkan ke Home.
+    GoRoute(
+      path: AppRoutes.googleCallback,
+      name: 'google-callback',
+      builder: (BuildContext context, GoRouterState state) =>
+          GoogleCallbackScreen(
+            token: state.uri.queryParameters['token'],
+            galat: state.uri.queryParameters['error'],
+          ),
     ),
 
     // Alamat `/surah` tanpa nomor tidak punya arti — kembalikan ke Home
@@ -155,6 +263,41 @@ final GoRouter appRouter = GoRouter(
           initialAyat: _angkaDariQuery(state, 'ayat'),
           initialMode: state.uri.queryParameters['mode'],
           initialMushafPage: _angkaDariQuery(state, 'page'),
+        );
+      },
+    ),
+
+    // Alamat `/tonton` tanpa ID video tidak punya arti — kembalikan ke Home.
+    GoRoute(
+      path: AppRoutes.tonton,
+      redirect: (BuildContext context, GoRouterState state) => AppRoutes.home,
+    ),
+
+    GoRoute(
+      path: '${AppRoutes.tonton}/:videoId',
+      name: 'tonton',
+      builder: (BuildContext context, GoRouterState state) {
+        // ID dari URL bisa saja tidak masuk akal (mis. `/tonton/abc` atau
+        // alamat yang diketik asal-asalan), jadi wajib divalidasi dulu.
+        final String id = (state.pathParameters['videoId'] ?? '').trim();
+
+        if (!_polaIdVideo.hasMatch(id)) {
+          return const _RouteFallbackScreen(
+            judul: 'Video tidak ditemukan',
+            pesan: 'Tautan video yang kamu buka tidak dikenali.',
+          );
+        }
+
+        return TontonScreen(
+          // Kunci ini PENTING. Tanpa kunci yang berubah saat ID videonya
+          // berganti, Flutter akan memakai ulang halaman yang sedang tampil —
+          // dan pemutarnya tetap menampilkan video LAMA walaupun alamatnya
+          // sudah menunjuk video lain.
+          key: ValueKey<String>('tonton-$id'),
+          videoId: id,
+          judul: state.uri.queryParameters['judul'] ?? '',
+          kanal: state.uri.queryParameters['kanal'] ?? '',
+          siaranLangsung: state.uri.queryParameters['live'] == '1',
         );
       },
     ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../router/app_router.dart';
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 
 /// Satu item menu navigasi utama.
@@ -32,6 +33,44 @@ const double kLebarSidebar = 250;
 /// Tinggi bilah judul di atas isi halaman, khusus layar lebar.
 const double kTinggiBilahJudul = 68;
 
+/// Latar sidebar (layar lebar).
+///
+/// Sengaja TIDAK memakai `AppColors.getSurfaceContainerLow` yang dipakai kartu
+/// (putih di mode terang). Warna itu sama dengan latar halaman yang juga
+/// hampir putih, sehingga sidebar menyatu dengan isi halaman dan tampak
+/// seperti bidang putih kosong tanpa bentuk.
+///
+/// Di mode terang sidebar diberi hijau sangat muda supaya terbaca sebagai
+/// panel tersendiri — masih sejalan dengan hijau aplikasi, tidak keluar dari
+/// nuansa yang sudah ada.
+Color _latarSidebar(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark
+      ? const Color(0xFF002117)
+      : const Color(0xFFDCEBE3);
+}
+
+/// Garis pemisah antara sidebar dan isi halaman.
+///
+/// Dibuat lebih jelas daripada `AppColors.getSurfaceVariant` karena warna itu
+/// praktis hilang di atas latar hijau muda.
+Color _garisSidebar(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark
+      ? const Color(0xFF003D2D)
+      : const Color(0xFFB9D4C6);
+}
+
+/// Latar menu yang sedang dibuka.
+///
+/// Sebelumnya memakai emas tipis di atas latar putih. Hasilnya justru terlihat
+/// seperti balok krem kusam — bukan penanda yang jelas. Sekarang menu terpilih
+/// dibuat seperti kartu yang menonjol dari sidebar, dengan ikon emas dan
+/// tulisan tebal di atasnya.
+Color _latarMenuTerpilih(BuildContext context) {
+  return Theme.of(context).brightness == Brightness.dark
+      ? const Color(0xFF0A4635)
+      : Colors.white;
+}
+
 /// Sidebar untuk layar lebar (desktop / tablet lanskap).
 ///
 /// Bentuknya dibuat seperti aplikasi desktop: nama aplikasi di atas, daftar
@@ -50,7 +89,7 @@ class AppSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color garis = AppColors.getSurfaceVariant(context);
+    final Color garis = _garisSidebar(context);
 
     // Alamat halaman yang sedang dibuka, dipakai untuk menyorot menu tambahan
     // (Pengaturan / Tentang) sama seperti menu utama menyorot tab aktif.
@@ -59,7 +98,7 @@ class AppSidebar extends StatelessWidget {
     return Container(
       width: kLebarSidebar,
       decoration: BoxDecoration(
-        color: AppColors.getSurfaceContainerLow(context),
+        color: _latarSidebar(context),
         border: Border(right: BorderSide(color: garis)),
       ),
       child: Column(
@@ -141,6 +180,22 @@ class AppSidebar extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
             child: Column(
               children: <Widget>[
+                // Menu ini HANYA muncul untuk akun yang terdaftar sebagai ustadz.
+                FutureBuilder<bool>(
+                  future: AuthService().isUstadz(),
+                  builder: (BuildContext context, AsyncSnapshot<bool> keadaan) {
+                    if (keadaan.data != true) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return _BarisMenu(
+                      ikon: Icons.edit_note_rounded,
+                      label: 'Fawaidh Saya',
+                      terpilih: jalurSekarang == AppRoutes.fawaidhSaya,
+                      onTap: () => _bukaHalaman(context, AppRoutes.fawaidhSaya),
+                    );
+                  },
+                ),
                 _BarisMenu(
                   ikon: Icons.settings_outlined,
                   label: 'Pengaturan',
@@ -193,9 +248,10 @@ class _BarisMenu extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Material(
-        color: terpilih
-            ? AppColors.getGoldLeaf(context).withValues(alpha: 0.14)
-            : Colors.transparent,
+        // Menu yang sedang dibuka dibuat seperti kartu yang menonjol dari
+        // sidebar — lihat [_latarMenuTerpilih]. Jauh lebih jelas daripada
+        // lapisan emas tipis di atas latar putih.
+        color: terpilih ? _latarMenuTerpilih(context) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),

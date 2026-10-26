@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../config.dart';
 import '../router/app_router.dart';
+import '../services/murottal_service.dart';
 import '../services/streak_service.dart';
 import '../widgets/responsive_content.dart';
 
@@ -44,6 +45,13 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
 
   // --- [BARU] MAPPING AYAT -> NOMOR HALAMAN MUSHAF (buat surah ini saja) ---
   Map<int, int> _ayahToPageMap = {};
+
+  /// Peta ayat->halaman untuk surah yang SEDANG diputar dari mode mushaf.
+  ///
+  /// Bisa berbeda dari [_ayahToPageMap]: di mode mushaf pembaca bisa menggeser
+  /// jauh sampai masuk ke surah lain, sedangkan [_ayahToPageMap] tetap milik
+  /// surah yang pertama kali dibuka.
+  Map<int, int> _mapAyatHalamanMurottal = {};
 
   // --- PENCATATAN PROGRES UNTUK RUNTUTAN HARIAN ---
   // Mencatat berapa ayat / halaman yang TERLEWATI user hari ini. Batas
@@ -199,8 +207,266 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     // Progres baca dicatat untuk fitur runtutan harian.
     _itemPositionsListener.itemPositions.addListener(_catatProgresTerjemahan);
 
+    // Layar ikut bergulir saat murottal berpindah ayat.
+    MurottalService.instance.sedangDiputar.addListener(_ikutiAyatDiputar);
+
     _fetchDetailSurah();
     _loadAyahPageMapping();
+  }
+
+  /// Menggulir layar mengikuti ayat yang sedang dibunyikan.
+  ///
+  /// Hanya dilakukan kalau ayatnya memang BELUM terlihat. Kalau pembaca sudah
+  /// melihatnya — atau sengaja menggulir sendiri — layar tidak dirampas.
+  void _ikutiAyatDiputar() {
+    final MurottalService murottal = MurottalService.instance;
+
+    if (!murottal.berbunyi.value) return;
+
+    final int? nomor = murottal.sedangDiputar.value;
+    if (nomor == null) return;
+
+    // --- Mode mushaf: yang berpindah adalah HALAMAN ---
+    //
+    // Di mode ini teksnya bukan per kartu ayat, jadi tidak ada yang bisa
+    // digulir per ayat. Yang bisa dipastikan adalah halaman mana yang memuat
+    // ayat tersebut — dan itu sudah cukup untuk mengikuti bacaan.
+    //
+    // Peta yang dipakai HARUS peta surah yang sedang diputar.
+    if (_isMushafMode) {
+      final int? halaman = _mapAyatHalamanMurottal[nomor];
+
+      if (halaman == null || !_pageController.hasClients) return;
+
+      final int tujuan = halaman - 1;
+      final int? sekarang = _pageController.page?.round();
+
+      if (sekarang == tujuan) return;
+
+      _pageController.animateToPage(
+        tujuan,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+      return;
+    }
+
+    // Mode terjemahan: hanya relevan untuk surah yang sedang terbuka.
+    if (murottal.nomorSurah != widget.nomorSurah) return;
+
+    final List<dynamic>? ayat = _surahData?['ayat'] as List<dynamic>?;
+
+    if (ayat == null || ayat.isEmpty) return;
+    if (!_itemScrollController.isAttached) return;
+
+    final bool hasBismillah = widget.nomorSurah != 1 && widget.nomorSurah != 9;
+    final int indeks = (nomor - 1) + (hasBismillah ? 2 : 1);
+
+    final bool sudahTerlihat = _itemPositionsListener.itemPositions.value.any(
+      (ItemPosition posisi) =>
+          posisi.index == indeks &&
+          posisi.itemLeadingEdge < 0.85 &&
+          posisi.itemTrailingEdge > 0.15,
+    );
+
+    if (sudahTerlihat) return;
+
+    _itemScrollController.scrollTo(
+      index: indeks,
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeInOut,
+      alignment: 0.12,
+    );
+  }
+
+  // =====================================================================
+  // MUROTTAL (audio per ayat)
+  // =====================================================================
+
+  /// Menyalakan / menjeda murottal untuk surah yang sedang dibuka.
+  ///
+  /// Kalau yang sedang diputar surah lain, pemutaran dimulai dari ayat 1
+  /// surah ini — bukan melanjutkan surah lain yang mungkin sudah tidak
+  /// relevan dengan yang sedang dibaca.
+  Future<void> _toggleMurottal() async {
+    final MurottalService murottal = MurottalService.instance;
+
+    // ===== MODE MUSHAF =====
+    //
+    // Yang menentukan adalah HALAMAN yang sedang terlihat, bukan surah yang
+    // dulu dibuka. Halaman mushaf itu satu PageView berisi 604 halaman, jadi
+    // pembaca bisa sudah berada di Al-Baqarah padahal halaman ini dibuka
+    // untuk Al-Fatihah. Kalau tetap memakai surah awal, audio akan kembali
+    // ke Al-Fatihah dan halaman ikut terlempar ke sana.
+    if (_isMushafMode) {
+      final int halaman = _currentPageIndex + 1;
+      final MushafPageData? data = _pageDataCache[halaman];
+
+      final int surahTujuan = data?.primaryChapterNumber ?? widget.nomorSurah;
+      final int ayatTujuan = data?.primaryFirstAyahNumber ?? 1;
+
+      if (murottal.aktif && murottal.nomorSurah == surahTujuan) {
+        // Jeda hanya dilanjutkan kalau ayat yang tadi berbunyi MEMANG berada
+        // di halaman yang sekarang terlihat.
+        //
+        // Tanpa pemeriksaan ini, orang yang menjeda di halaman 5 lalu bergeser
+        // ke halaman 7 tetap mendengar lanjutan dari halaman 5 — padahal yang
+        // dia lihat halaman 7. Persis itu yang membuat audio terasa "nyangkut
+        // di halaman awal".
+        final int? ayatAktif = murottal.sedangDiputar.value;
+        final int? halamanAyatAktif = ayatAktif == null
+            ? null
+            : _mapAyatHalamanMurottal[ayatAktif];
+
+        final bool masihDiHalamanIni =
+            halamanAyatAktif != null && halamanAyatAktif == halaman;
+
+        if (masihDiHalamanIni) {
+          if (murottal.berbunyi.value) {
+            await murottal.jeda();
+          } else {
+            await murottal.lanjutkan();
+          }
+          return;
+        }
+      }
+
+      final List<dynamic>? daftar = await _ambilAyatUntukMurottal(surahTujuan);
+      if (daftar == null || daftar.isEmpty) return;
+
+      // Peta halaman harus milik surah TUJUAN, bukan surah yang dulu dibuka.
+      _mapAyatHalamanMurottal = surahTujuan == widget.nomorSurah
+          ? _ayahToPageMap
+          : await _ambilPetaAyatHalaman(surahTujuan);
+
+      await murottal.mulai(
+        nomorSurah: surahTujuan,
+        daftarAyat: daftar,
+        nomorAyat: ayatTujuan,
+      );
+      return;
+    }
+
+    // ===== MODE TERJEMAHAN =====
+    if (murottal.aktif && murottal.nomorSurah == widget.nomorSurah) {
+      if (murottal.berbunyi.value) {
+        await murottal.jeda();
+      } else {
+        await murottal.lanjutkan();
+      }
+      return;
+    }
+
+    final List<dynamic>? daftar = _surahData?['ayat'] as List<dynamic>?;
+    if (daftar == null || daftar.isEmpty) return;
+
+    await murottal.mulai(nomorSurah: widget.nomorSurah, daftarAyat: daftar);
+  }
+
+  /// Mengambil daftar ayat sebuah surah untuk murottal.
+  ///
+  /// Kalau yang diminta surah yang sedang terbuka, datanya sudah dipegang
+  /// halaman ini. Kalau bukan (mode mushaf bisa digeser ke surah lain),
+  /// datanya diambil dari API yang sama dengan yang dipakai halaman ini.
+  Future<List<dynamic>?> _ambilAyatUntukMurottal(int nomorSurah) async {
+    if (nomorSurah == widget.nomorSurah && _surahData != null) {
+      return _surahData!['ayat'] as List<dynamic>?;
+    }
+
+    try {
+      final http.Response jawaban = await http
+          .get(Uri.parse('https://equran.id/api/v2/surat/$nomorSurah'))
+          .timeout(const Duration(seconds: 20));
+
+      if (jawaban.statusCode != 200) return null;
+
+      final dynamic badan = json.decode(jawaban.body);
+      final dynamic ayat = badan?['data']?['ayat'];
+
+      return ayat is List ? ayat : null;
+    } catch (e) {
+      debugPrint('Gagal mengambil ayat surah $nomorSurah: $e');
+      return null;
+    }
+  }
+
+  /// Peta ayat -> halaman untuk surah tertentu. Gagal berarti peta kosong;
+  /// murottal tetap jalan, hanya halaman tidak ikut berpindah.
+  Future<Map<int, int>> _ambilPetaAyatHalaman(int nomorSurah) async {
+    try {
+      return await _mushafApi.fetchAyahPageMap(nomorSurah);
+    } catch (e) {
+      debugPrint('Gagal mengambil peta halaman surah $nomorSurah: $e');
+      return <int, int>{};
+    }
+  }
+
+  /// Tombol putar/jeda di AppBar.
+  Widget _buildTombolMurottal() {
+    final MurottalService murottal = MurottalService.instance;
+
+    return ValueListenableBuilder<int?>(
+      valueListenable: murottal.sedangDiputar,
+      builder: (BuildContext context, int? ayatAktif, Widget? _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: murottal.berbunyi,
+          builder: (BuildContext context, bool bunyi, Widget? __) {
+            final bool surahIni =
+                murottal.aktif && murottal.nomorSurah == widget.nomorSurah;
+
+            return IconButton(
+              tooltip: surahIni && bunyi ? 'Jeda murottal' : 'Putar murottal',
+              icon: Icon(
+                surahIni && bunyi
+                    ? Icons.pause_circle_filled_rounded
+                    : Icons.play_circle_filled_rounded,
+                color: const Color(0xFF003527),
+              ),
+              onPressed: _surahData == null ? null : _toggleMurottal,
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Tombol kecil di tiap ayat: putar mulai ayat ini.
+  Widget _buildTombolPutarAyat(Map<String, dynamic> ayat) {
+    final MurottalService murottal = MurottalService.instance;
+    final int nomor = (ayat['nomorAyat'] as num?)?.toInt() ?? 0;
+
+    return ValueListenableBuilder<int?>(
+      valueListenable: murottal.sedangDiputar,
+      builder: (BuildContext context, int? diputar, Widget? _) {
+        final bool sedangIni =
+            diputar == nomor && murottal.nomorSurah == widget.nomorSurah;
+
+        return IconButton(
+          tooltip: sedangIni ? 'Hentikan murottal' : 'Putar ayat ini',
+          icon: Icon(
+            sedangIni ? Icons.graphic_eq_rounded : Icons.play_arrow_rounded,
+            color: sedangIni
+                ? const Color(0xFF904D00)
+                : const Color(0xFF6B7280),
+          ),
+          onPressed: () async {
+            if (sedangIni) {
+              await murottal.berhenti();
+              return;
+            }
+
+            final List<dynamic>? daftar = _surahData?['ayat'] as List<dynamic>?;
+            if (daftar == null || daftar.isEmpty) return;
+
+            await murottal.mulai(
+              nomorSurah: widget.nomorSurah,
+              daftarAyat: daftar,
+              nomorAyat: nomor,
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -208,7 +474,13 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
     _itemPositionsListener.itemPositions.removeListener(
       _catatProgresTerjemahan,
     );
+    MurottalService.instance.sedangDiputar.removeListener(_ikutiAyatDiputar);
     _pageController.dispose();
+
+    // Audio tidak boleh terus berbunyi setelah halaman ditinggalkan: tanpa
+    // ini, murottal jalan terus tanpa satu pun tombol untuk menghentikannya.
+    MurottalService.instance.berhenti();
+
     super.dispose();
   }
 
@@ -304,6 +576,10 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
       if (!mounted) return;
       setState(() {
         _ayahToPageMap = map;
+        // Peta yang sama dipakai murottal di mode mushaf. Diisi sejak awal
+        // supaya pengecekan "ayat ini ada di halaman mana" tidak kosong saat
+        // pemutaran pertama kali ditekan.
+        _mapAyatHalamanMurottal = map;
       });
     } catch (e) {
       debugPrint('Gagal memuat mapping ayat-halaman: $e');
@@ -514,6 +790,7 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
               ),
               centerTitle: true,
               actions: [
+                _buildTombolMurottal(),
                 IconButton(
                   tooltip: 'Ganti Mode Baca',
                   icon: const Icon(
@@ -667,22 +944,46 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                   Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF3F4F5),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Center(
-                          child: Text(
-                            ayat['nomorAyat'].toString(),
-                            style: const TextStyle(
-                              color: Color(0xFF003527),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
+                      // Nomor ayat ikut berubah warna saat ayat ini sedang
+                      // diputar — penanda paling jelas tanpa menambah tombol
+                      // besar di tengah bacaan.
+                      ValueListenableBuilder<int?>(
+                        valueListenable: MurottalService.instance.sedangDiputar,
+                        builder:
+                            (BuildContext context, int? diputar, Widget? _) {
+                              final bool sedangIni =
+                                  diputar == ayat['nomorAyat'] &&
+                                  MurottalService.instance.nomorSurah ==
+                                      widget.nomorSurah;
+
+                              return Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: sedangIni
+                                      ? const Color(0xFFFDEBD3)
+                                      : const Color(0xFFF3F4F5),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: sedangIni
+                                      ? Border.all(
+                                          color: const Color(0xFF904D00),
+                                          width: 1.5,
+                                        )
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    ayat['nomorAyat'].toString(),
+                                    style: TextStyle(
+                                      color: sedangIni
+                                          ? const Color(0xFF904D00)
+                                          : const Color(0xFF003527),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                       ),
                       Positioned(
                         top: -4,
@@ -698,13 +999,21 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                       ),
                     ],
                   ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.bookmark_add_outlined,
-                      color: Color(0xFF904D00),
-                    ),
-                    tooltip: 'Tandai Terakhir Dibaca',
-                    onPressed: () => _saveBookmark(ayat['nomorAyat']),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildTombolPutarAyat(
+                        Map<String, dynamic>.from(ayat as Map),
+                      ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.bookmark_add_outlined,
+                          color: Color(0xFF904D00),
+                        ),
+                        tooltip: 'Tandai Terakhir Dibaca',
+                        onPressed: () => _saveBookmark(ayat['nomorAyat']),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1389,6 +1698,9 @@ class _DetailSurahScreenState extends State<DetailSurahScreen> {
                       ),
                     ),
                   ),
+                  // Tombol murottal juga di sini: mode mushaf tidak memakai
+                  // AppBar, jadi tombol di AppBar tadi tidak akan terlihat.
+                  _buildTombolMurottal(),
                   IconButton(
                     icon: const Icon(
                       Icons.bookmark_add_outlined,
@@ -1569,6 +1881,24 @@ class MushafPageData {
       }
     }
     return 0;
+  }
+
+  /// Nomor ayat PERTAMA pada halaman ini, untuk [primaryChapterNumber].
+  ///
+  /// Dipakai murottal: kalau pembaca menggeser ke halaman yang memuat surah
+  /// lain, pemutaran harus mulai dari ayat pertama yang TERLIHAT di halaman
+  /// itu — bukan dari ayat 1 surah yang dulu dibuka.
+  int get primaryFirstAyahNumber {
+    for (final item in items) {
+      if (item is MushafLineItem) {
+        for (final MushafWord kata in item.line.words) {
+          if (kata.chapterNumber == primaryChapterNumber) {
+            return kata.ayahNumber;
+          }
+        }
+      }
+    }
+    return 1;
   }
 
   factory MushafPageData.fromWords(int pageNumber, List<MushafWord> words) {

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:insyira_muslim_app/config.dart';
 import 'package:insyira_muslim_app/router/app_router.dart';
 import 'package:insyira_muslim_app/services/auth_service.dart';
@@ -86,20 +87,38 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _loginWithGoogle() async {
-    // Di web, google_sign_in butuh clientId tipe "Web application".
-    // Kalau belum dikonfigurasi, kasih pesan yang jelas daripada gagal misterius.
-    if (kIsWeb && !AppConfig.hasGoogleWebClientId) {
-      _showError(
-        'Login Google belum dikonfigurasi untuk versi web.\n'
-        'Isi GOOGLE_WEB_CLIENT_ID saat build.',
+    // ── Versi WEB: memakai PENGALIHAN HALAMAN, bukan google_sign_in ────
+    //
+    // Cara lama (`GoogleSignIn().signIn()`) sudah USANG di web dan sekarang
+    // MENGGANTUNG tanpa pesan apa pun — gejalanya tombol berhenti di
+    // "memuat" dan tidak ada popup sama sekali.
+    //
+    // Jalur yang dipakai sekarang:
+    //   1. buka `<alamat-api>/auth/google` di backend,
+    //   2. backend mengalihkan browser ke halaman Google,
+    //   3. setelah selesai, backend mengalihkan kembali ke aplikasi di
+    //      `/#/auth/callback?token=...` (lihat GoogleCallbackScreen).
+    //
+    // ⚠️ Butuh `GOOGLE_CLIENT_SECRET` + `INSYIRA_WEB_AUTH_CALLBACK` di backend.
+    // Tanpa keduanya, halaman callback akan menampilkan pesan gagal.
+    if (kIsWeb) {
+      setState(() => _isLoading = true);
+      final bool dibuka = await launchUrl(
+        Uri.parse('${AppConfig.apiBaseUrl}/auth/google'),
+        webOnlyWindowName: '_self',
       );
+      if (!dibuka) {
+        if (mounted) setState(() => _isLoading = false);
+        _showError('Tidak bisa membuka halaman login Google. Coba lagi ya.');
+      }
+      // Kalau berhasil, browser akan pindah halaman — jadi tidak ada state
+      // yang perlu dirapikan di sini.
       return;
     }
 
     setState(() => _isLoading = true);
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn(
-        clientId: kIsWeb ? AppConfig.googleWebClientId : null,
         serverClientId: AppConfig.googleServerClientId,
         scopes: ['email', 'profile'],
       );

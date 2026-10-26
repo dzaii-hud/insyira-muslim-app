@@ -13,7 +13,17 @@ publish_to: 'none'
 # penjadwalan adzan (menghapus pengingat dzikir), pengingat dzikir pagi 09:00 &
 # sore 17:00, kartu Status Notifikasi di Pengaturan, dan kiblat versi web untuk
 # peramban HP.
-version: 1.0.0+8
+# +9 (5 Okt 2026): baris waktu sholat tidak lagi terpotong di layar sempit /
+# huruf sistem besar (laporan tester Z Flip 4), kartu "Runtutan Harian" tidak
+# lagi menyuruh dzikir di luar waktunya, pesan pengingat sore tidak lagi menagih
+# dzikir pagi, dan "Mode Utara" supaya kiblat tetap bisa dibaca di PC (tanpa
+# sensor kompas).
+# +10 (5 Okt 2026): PEMBUATAN ULANG yang +9. AAB +9 dibangun TANPA
+# `--dart-define=API_BASE_URL=...`, sehingga aplikasi menembak alamat LAN dev
+# (http://192.168.18.4:8000/api) dan SELURUH data online (kajian, fawaidh,
+# kajian online) kosong di HP tester. ⚠️ JANGAN pernah `flutter build appbundle`
+# tanpa `--dart-define=API_BASE_URL=https://api.pusatoleolehpekanbaru.id/api`.
+version: 1.0.0+11
 
 environment:
   sdk: ^3.10.4
@@ -45,6 +55,9 @@ dependencies:
   # `flutter_compass` tidak punya implementasi web, jadi sensor dibaca langsung
   # lewat API `deviceorientation`.
   web: ^1.1.1
+  youtube_player_iframe: ^6.0.2
+  share_plus: ^13.3.1
+  home_widget: ^0.10.0
 
 dev_dependencies:
   flutter_test:

@@ -16,12 +16,17 @@ import 'dzikir_screen.dart';
 import '../config.dart';
 import '../router/app_router.dart';
 import '../theme/app_theme.dart';
+import '../services/auth_service.dart';
 import '../services/notification_navigator.dart';
+import '../services/widget_service.dart';
+import '../widgets/pengumuman_banner.dart';
 import '../services/notification_service.dart';
 import '../services/streak_service.dart';
 import '../services/youtube_service.dart';
 import '../widgets/kajian_card_background.dart';
+import '../widgets/kajian_detail_sheet.dart';
 import '../widgets/app_shell.dart';
+import '../widgets/jadwal_sholat_row.dart';
 import '../widgets/notification_center.dart';
 import '../widgets/responsive_content.dart';
 import '../widgets/streak_card.dart';
@@ -169,9 +174,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _notificationService.init();
 
-    // Pengingat dzikir pagi (09:00) & sore (17:00). Aman dipanggil berkali-kali
-    // karena ID notifikasinya tetap, jadi jadwalnya hanya ditimpa.
-    _notificationService.scheduleDzikirReminders();
+    // Pengingat dzikir pagi (09:00) & sore (17:00). Lewat StreakService
+    // supaya sesi yang sudah tuntas hari ini tidak ikut diingatkan lagi.
+    _streakService.perbaruiPengingatDzikir();
 
     _getLocationAndPrayerTimes();
 
@@ -252,6 +257,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _homeKajianList = data.map((e) => Kajian.fromJson(e)).toList();
             _isLoadingKajianHome = false;
           });
+
+          // Simpan kajian terdekat untuk widget layar utama.
+          unawaited(_simpanKajianUntukWidget());
         }
       } else {
         if (mounted) setState(() => _isLoadingKajianHome = false);
@@ -260,6 +268,81 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       debugPrint('Gagal load kajian home: $e');
       if (mounted) setState(() => _isLoadingKajianHome = false);
     }
+  }
+
+  /// Menyimpan kajian TERDEKAT ke widget layar utama.
+  ///
+  /// "Terdekat" = waktunya paling dekat DAN belum lewat. Kalau semua sudah
+  /// lewat, widget diberi tahu bahwa tidak ada — supaya tidak menampilkan
+  /// kajian lama seolah masih akan datang.
+  Future<void> _simpanKajianUntukWidget() async {
+    final DateTime sekarang = DateTime.now();
+
+    Kajian? terdekat;
+    DateTime? waktuTerdekat;
+
+    for (final Kajian kajian in _homeKajianList) {
+      // Tanggal dari API berbentuk "yyyy-MM-dd" dan jam "HH:mm".
+      final DateTime? waktu = DateTime.tryParse(
+        '${kajian.tanggal} ${kajian.jamMulai}:00',
+      );
+
+      if (waktu == null || !waktu.isAfter(sekarang)) continue;
+
+      if (waktuTerdekat == null || waktu.isBefore(waktuTerdekat)) {
+        waktuTerdekat = waktu;
+        terdekat = kajian;
+      }
+    }
+
+    if (terdekat == null || waktuTerdekat == null) {
+      await WidgetService.simpanKajianTerdekat();
+      return;
+    }
+
+    await WidgetService.simpanKajianTerdekat(
+      judul: terdekat.judul,
+      waktu: _teksWaktuKajian(waktuTerdekat),
+      ustadz: terdekat.ustadz,
+      lokasi: terdekat.lokasi,
+    );
+  }
+
+  /// Contoh hasil: "Sen, 21 Okt · 19:30".
+  ///
+  /// Ditulis manual, bukan memakai paket tambahan, karena hanya butuh satu
+  /// bentuk seperti ini.
+  String _teksWaktuKajian(DateTime waktu) {
+    const List<String> namaHari = <String>[
+      'Sen',
+      'Sel',
+      'Rab',
+      'Kam',
+      'Jum',
+      'Sab',
+      'Min',
+    ];
+    const List<String> namaBulan = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'Mei',
+      'Jun',
+      'Jul',
+      'Agu',
+      'Sep',
+      'Okt',
+      'Nov',
+      'Des',
+    ];
+
+    final String jam =
+        '${waktu.hour.toString().padLeft(2, '0')}:'
+        '${waktu.minute.toString().padLeft(2, '0')}';
+
+    return '${namaHari[waktu.weekday - 1]}, ${waktu.day} '
+        '${namaBulan[waktu.month - 1]} · $jam';
   }
 
   Future<void> _loadFawaidhHome() async {
@@ -363,40 +446,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Membuka LANGSUNG video/live yang dipilih di aplikasi YouTube,
-  /// bukan cuma halaman channel-nya.
-  Future<void> _openYouTubeVideo(YouTubeVideo video) async {
+  /// Memutar video/live yang dipilih DI DALAM aplikasi.
+  ///
+  /// Dulu fungsi ini melempar user keluar ke aplikasi YouTube. Sekarang
+  /// videonya dibuka di halaman TontonScreen memakai pemutar resmi YouTube,
+  /// jadi user tidak kehilangan tempatnya di Insyira. Dari halaman itu user
+  /// masih bisa pindah ke aplikasi YouTube kalau memang mau.
+  void _openYouTubeVideo(YouTubeVideo video) {
     final String videoId = video.id.trim();
 
     // Kalau ID video kosong (data aneh dari API), baru fallback ke channel.
     if (videoId.isEmpty) {
-      await _openYouTubeChannel();
+      unawaited(_openYouTubeChannel());
       return;
     }
 
-    // `watch?v=ID` berlaku untuk video biasa maupun siaran live,
-    // dan otomatis dibuka oleh aplikasi YouTube kalau terpasang.
-    final Uri url = Uri.parse('https://www.youtube.com/watch?v=$videoId');
-
-    try {
-      final bool launched = await launchUrl(
-        url,
-        mode: LaunchMode.externalApplication,
-      );
-      if (!launched) {
-        await _openYouTubeChannel();
-      }
-    } catch (e) {
-      debugPrint('Gagal membuka video YouTube: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Tidak dapat membuka video di YouTube'),
-            backgroundColor: Colors.red.shade800,
-          ),
-        );
-      }
-    }
+    context.push(
+      AppRoutes.tontonVideo(
+        videoId: videoId,
+        judul: video.title,
+        kanal: video.channelTitle,
+        siaranLangsung: video.liveBroadcastContent == 'live',
+      ),
+    );
   }
 
   @override
@@ -413,7 +485,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // Aplikasi baru dipakai lagi: mulai hitungan "waktu sholat masuk saat
       // aplikasi dipakai" dari titik ini, bukan dari sebelumnya.
       _sejakKapanDiDepan = DateTime.now();
-      _notificationService.scheduleDzikirReminders();
+      _streakService.perbaruiPengingatDzikir();
       if (_locationName == "GPS belum aktif" ||
           _locationName == "Izin lokasi ditolak") {
         _getLocationAndPrayerTimes();
@@ -555,6 +627,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     if (_prayerTimes != null) {
       await _notificationService.schedulePrayerNotifications(_prayerTimes!);
+
+      // Jadwal untuk widget layar utama. Disimpan 7 hari sekaligus supaya
+      // widget tetap benar walau aplikasi tidak dibuka setiap hari.
+      await WidgetService.simpanJadwalSholat(
+        koordinat: coordinates,
+        parameter: params,
+        namaKota: _locationName,
+      );
     }
   }
 
@@ -775,6 +855,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// Membuka halaman BACA langsung dari kartu di beranda.
+  ///
+  /// Sebelumnya kartu ini membuka daftar, sehingga pembaca yang sudah tertarik
+  /// pada satu judul masih harus mencarinya lagi di daftar. Datanya sudah ada
+  /// di tangan, jadi langsung saja dibuka.
+  void _bukaFawaidhDariHome(Map<String, dynamic> item) {
+    final Object? id = item['id'];
+
+    if (id == null) {
+      _openFawaidhScreen();
+      return;
+    }
+
+    context.push(AppRoutes.bacaFawaidh(id), extra: item);
+  }
+
   // =====================================================================
   // LOGIKA KAJIAN WIDGET DI HOME
   // =====================================================================
@@ -870,6 +966,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         '${now.minute.toString().padLeft(2, '0')}';
     return nowTime.compareTo(kajian.jamMulai) >= 0 &&
         nowTime.compareTo(kajian.jamSelesai) <= 0;
+  }
+
+  /// Apakah kajian ini bisa langsung ditonton sekarang?
+  ///
+  /// Dua syarat, dan keduanya harus terpenuhi: jadwalnya sedang berlangsung
+  /// DAN Insyira TV benar-benar sedang mengudara. Syarat kedua penting —
+  /// jam jadwal yang sudah masuk belum tentu berarti siarannya ada, dan
+  /// tanpa pemeriksaan itu pengguna akan dibawa ke pemutar yang kosong.
+  bool _sedangLiveHome(Kajian kajian) =>
+      _isKajianOngoingHome(kajian) && _liveVideos.isNotEmpty;
+
+  /// Aksi saat kartu kajian di Home diketuk.
+  ///
+  /// Dua perilaku yang sengaja dibedakan:
+  /// * Sedang live → langsung putar siarannya. Orang yang mengetuk kartu
+  ///   bertanda LIVE memang mau menonton, jadi rincian hanya menambah satu
+  ///   ketukan lagi.
+  /// * Belum/sudah lewat/tidak ada siaran → buka rincian, sama seperti
+  ///   perilaku kartu di halaman Kajian.
+  void _bukaKajianHome(Kajian kajian) {
+    if (_sedangLiveHome(kajian)) {
+      _openYouTubeVideo(_liveVideos.first);
+      return;
+    }
+
+    unawaited(bukaRincianKajian(context, kajian));
+  }
+
+  /// Membungkus kartu kajian dengan area ketuk.
+  ///
+  /// Dipisah dari kartunya supaya tampilan kartu tidak perlu diubah hanya
+  /// untuk menambahkan ketukan — pola yang sama dipakai halaman Kajian.
+  Widget _beriKetukKajianHome(Kajian kajian, Widget kartu) {
+    final bool live = _sedangLiveHome(kajian);
+
+    return Semantics(
+      button: true,
+      label: live
+          ? 'Tonton siaran langsung ${kajian.judul}'
+          : 'Buka rincian ${kajian.judul}',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _bukaKajianHome(kajian),
+        child: kartu,
+      ),
+    );
   }
 
   String _getMonthShortHome(String tanggal) {
@@ -1098,13 +1240,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           _buildSectionLoader('Memuat jadwal kajian...')
         else ...[
           if (featured != null)
-            _buildKajianHomeFeaturedCard(featured)
+            _beriKetukKajianHome(
+              featured,
+              _buildKajianHomeFeaturedCard(featured),
+            )
           else
             _buildKajianHomeEmptyState(hasToday),
 
           if (others.isNotEmpty) ...[
             const SizedBox(height: 12),
-            ...others.take(2).map((k) => _buildKajianHomeRegularCard(k)),
+            ...others
+                .take(2)
+                .map(
+                  (k) =>
+                      _beriKetukKajianHome(k, _buildKajianHomeRegularCard(k)),
+                ),
           ],
         ],
       ],
@@ -1635,77 +1785,101 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ],
       ),
       drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Theme.of(context).brightness == Brightness.dark
-                    ? const Color(0xFF002117)
-                    : const Color(0xFF00695C),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withOpacity(0.2),
-                    ),
-                    child: const Icon(
+        // Sudut kanan dibulatkan supaya panelnya terlihat seperti lembaran yang
+        // menyembul dari tepi, bukan kotak penuh yang mentok ke tepi layar.
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.horizontal(right: Radius.circular(20)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _buildKepalaDrawer(context),
+
+            // Bagian tengah dibiarkan bisa digulir, dan kakinya ditempel di
+            // bawah. Dulu isinya hanya `ListView`, sehingga setelah dua baris
+            // menu sisanya jadi ruang kosong panjang yang menggantung.
+            Expanded(
+              child: Stack(
+                children: <Widget>[
+                  // Hiasan samar di tengah ruang kosong.
+                  //
+                  // Isi panel ini memang cuma dua menu, jadi sisanya lapang.
+                  // Tanpa hiasan, lapang itu terbaca sebagai "belum selesai";
+                  // dengan hiasan samar, ruangnya terlihat sengaja dibiarkan
+                  // lega — sama seperti sampul dalam sebuah buku.
+                  Center(
+                    child: Icon(
                       Icons.mosque,
-                      color: Colors.white,
-                      size: 30,
+                      size: 130,
+                      color: AppColors.getPrimaryText(
+                        context,
+                      ).withValues(alpha: 0.07),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Insyira',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Text(
-                    'Muslim App',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                  ListView(
+                    padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+                    children: <Widget>[
+                      // Menu ini HANYA muncul untuk akun yang terdaftar sebagai
+                      // ustadz. Pemeriksaannya dari data lokal (bukan ke server),
+                      // jadi tidak menambah waktu buka panel.
+                      FutureBuilder<bool>(
+                        future: AuthService().isUstadz(),
+                        builder:
+                            (
+                              BuildContext context,
+                              AsyncSnapshot<bool> keadaan,
+                            ) {
+                              if (keadaan.data != true) {
+                                return const SizedBox.shrink();
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _buildBarisDrawer(
+                                  context,
+                                  ikon: Icons.edit_note_rounded,
+                                  label: 'Fawaidh Saya',
+                                  onTap: () {
+                                    // Router diambil LEBIH DULU. Setelah
+                                    // `Navigator.pop`, panelnya sedang ditutup
+                                    // dan konteks di dalamnya belum tentu masih
+                                    // bisa dipakai untuk mencari router.
+                                    final GoRouter router = GoRouter.of(
+                                      context,
+                                    );
+                                    Navigator.pop(context);
+                                    router.push(AppRoutes.fawaidhSaya);
+                                  },
+                                ),
+                              );
+                            },
+                      ),
+                      _buildBarisDrawer(
+                        context,
+                        ikon: Icons.settings_rounded,
+                        label: 'Pengaturan',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openSettings();
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      _buildBarisDrawer(
+                        context,
+                        ikon: Icons.info_rounded,
+                        label: 'Tentang',
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openAbout();
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-            ListTile(
-              leading: Icon(
-                Icons.settings,
-                color: AppColors.getPrimaryText(context),
-              ),
-              title: Text(
-                'Pengaturan',
-                style: TextStyle(color: AppColors.getTextPrimary(context)),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _openSettings();
-              },
-            ),
-            Divider(color: Theme.of(context).dividerColor),
-            ListTile(
-              leading: Icon(
-                Icons.info,
-                color: AppColors.getPrimaryText(context),
-              ),
-              title: Text(
-                'Tentang',
-                style: TextStyle(color: AppColors.getTextPrimary(context)),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _openAbout();
-              },
-            ),
+
+            _buildKakiDrawer(context),
           ],
         ),
       ),
@@ -1745,6 +1919,142 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   /// Menu bawah untuk HP.
+  /// Kepala panel hamburger: logo, nama aplikasi, dan garis emas pemisah.
+  Widget _buildKepalaDrawer(BuildContext context) {
+    final bool modeGelap = Theme.of(context).brightness == Brightness.dark;
+
+    return Container(
+      decoration: BoxDecoration(
+        // Di mode gelap kepala ini TIDAK boleh memakai hijau yang terlalu tua:
+        // warnanya jadi nyaris sama dengan badan panelnya, sehingga batas
+        // antara kepala dan isinya tidak terlihat.
+        color: modeGelap ? const Color(0xFF0A4635) : const Color(0xFF00695C),
+        // Garis emas tipis sebagai pemisah — sekaligus warna khas aplikasi.
+        border: Border(
+          bottom: BorderSide(
+            color: AppColors.getGoldLeaf(context).withValues(alpha: 0.55),
+            width: 3,
+          ),
+        ),
+      ),
+      // Panel ini menutupi bagian paling atas layar, jadi isinya harus diberi
+      // jarak supaya tidak tertutup bilah status di HP.
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 22),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.18),
+                ),
+                child: const Icon(Icons.mosque, color: Colors.white, size: 28),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Insyira',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 23,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const Text(
+                'Muslim App',
+                style: TextStyle(color: Colors.white70, fontSize: 13.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Satu baris menu di panel hamburger, berbentuk kartu seperti kartu di
+  /// halaman lain — bukan baris polos tanpa bentuk.
+  Widget _buildBarisDrawer(
+    BuildContext context, {
+    required IconData ikon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    final Color aksen = AppColors.getPrimaryText(context);
+    final Color teks = AppColors.getTextPrimary(context);
+    final Color redup = AppColors.getOnSurfaceVariant(context);
+
+    return Material(
+      color: AppColors.getSurfaceVariant(context),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          child: Row(
+            children: <Widget>[
+              Icon(ikon, size: 21, color: aksen),
+              const SizedBox(width: 15),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: teks,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 20, color: redup),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Kaki panel hamburger.
+  ///
+  /// Bukan hiasan kosong: tanpa ini, sisa ruang di bawah menu tergantung jadi
+  /// bidang kosong memanjang dan panelnya terlihat belum selesai.
+  Widget _buildKakiDrawer(BuildContext context) {
+    final Color redup = AppColors.getOnSurfaceVariant(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 22),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Divider(color: Theme.of(context).dividerColor, height: 1),
+          const SizedBox(height: 14),
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.auto_awesome,
+                size: 15,
+                color: AppColors.getGoldLeaf(context),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Sahabat ibadah kaum muslimin',
+                  style: TextStyle(color: redup, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBottomNav(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
@@ -1788,6 +2098,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children: [
               _buildPrayerTimeHeader(),
               const SizedBox(height: 22),
+              // Pengumuman dari pengurus. Mengurus sendiri pengambilan dan
+              // penyembunyiannya, jadi tidak menambah keadaan di beranda.
+              const PengumumanBanner(),
               _buildMenuGrid(),
               const SizedBox(height: _sectionGap),
               _buildRuntutanHarian(),
@@ -2005,86 +2318,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildTimeItem(
-                  'Subuh',
-                  _prayerTimes != null
-                      ? DateFormat('HH:mm').format(_prayerTimes!.fajr)
-                      : '--:--',
-                  _activePrayer == 'Subuh',
-                ),
-                _buildTimeItem(
-                  'Dzuhur',
-                  _prayerTimes != null
-                      ? DateFormat('HH:mm').format(_prayerTimes!.dhuhr)
-                      : '--:--',
-                  _activePrayer == 'Dzuhur',
-                ),
-                _buildTimeItem(
-                  'Ashar',
-                  _prayerTimes != null
-                      ? DateFormat('HH:mm').format(_prayerTimes!.asr)
-                      : '--:--',
-                  _activePrayer == 'Ashar',
-                ),
-                _buildTimeItem(
-                  'Maghrib',
-                  _prayerTimes != null
-                      ? DateFormat('HH:mm').format(_prayerTimes!.maghrib)
-                      : '--:--',
-                  _activePrayer == 'Maghrib',
-                ),
-                _buildTimeItem(
-                  'Isya',
-                  _prayerTimes != null
-                      ? DateFormat('HH:mm').format(_prayerTimes!.isha)
-                      : '--:--',
-                  _activePrayer == 'Isya',
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTimeItem(String name, String time, bool isActive) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isActive
-            ? AppColors.getSurfaceVariant(context)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        children: [
-          Text(
-            name,
-            style: TextStyle(
-              color: isActive
-                  ? AppColors.getGoldLeaf(context)
-                  : AppColors.getOnSurfaceVariant(context),
-              fontSize: 12,
-              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            time,
-            style: TextStyle(
-              color: isActive
-                  ? AppColors.getGoldLeaf(context)
-                  : AppColors.getTextPrimary(context),
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          JadwalSholatRow(waktu: _prayerTimes, aktif: _activePrayer),
         ],
       ),
     );
@@ -2218,7 +2452,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final isi = (item['isi'] ?? '').toString().trim();
 
     return GestureDetector(
-      onTap: _openFawaidhScreen,
+      onTap: () => _bukaFawaidhDariHome(item),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(

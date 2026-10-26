@@ -964,7 +964,18 @@ class NotificationService {
   ///
   /// Aman dipanggil berkali-kali: ID notifikasinya tetap, jadi jadwal lama
   /// ditimpa jadwal baru (tidak menumpuk di laci notifikasi).
-  Future<void> scheduleDzikirReminders() async {
+  /// [pagiSelesai] / [soreSelesai] menandai sesi yang HARI INI sudah tuntas.
+  ///
+  /// Tanpa kedua penanda ini, pengingat berbunyi untuk dzikir yang sudah
+  /// dikerjakan: user menyelesaikan dzikir pagi pukul 08:00, lalu pukul 09:00
+  /// tetap diingatkan "Sudahkah Anda berdzikir pagi hari ini?".
+  ///
+  /// Karena itu pemanggil wajib mengisi apa yang sudah selesai — lihat
+  /// `StreakService.perbaruiPengingatDzikir()`.
+  Future<void> scheduleDzikirReminders({
+    bool pagiSelesai = false,
+    bool soreSelesai = false,
+  }) async {
     if (!isSupported) return;
     await init();
 
@@ -984,11 +995,13 @@ class NotificationService {
       id: _dzikirPagiReminderId,
       jam: jamDzikirPagi,
       waktu: 'pagi',
+      sudahSelesai: pagiSelesai,
     );
     await _jadwalkanPengingatDzikir(
       id: _dzikirSoreReminderId,
       jam: jamDzikirSore,
       waktu: 'sore',
+      sudahSelesai: soreSelesai,
     );
   }
 
@@ -996,8 +1009,29 @@ class NotificationService {
     required int id,
     required int jam,
     required String waktu,
+    bool sudahSelesai = false,
   }) async {
-    final target = tz.TZDateTime.from(waktuLokalBerikutnya(jam, 0), tz.local);
+    var target = tz.TZDateTime.from(waktuLokalBerikutnya(jam, 0), tz.local);
+
+    // Kalau sesi hari ini sudah tuntas dan jadwal berikutnya masih jatuh HARI
+    // INI juga, geser ke besok.
+    //
+    // Tanggalnya disusun ulang (bukan ditambah 24 jam) supaya jamnya tetap
+    // tepat sama, termasuk saat ada pergeseran waktu musim.
+    final sekarang = DateTime.now();
+
+    if (sudahSelesai &&
+        target.year == sekarang.year &&
+        target.month == sekarang.month &&
+        target.day == sekarang.day) {
+      target = tz.TZDateTime(
+        tz.local,
+        target.year,
+        target.month,
+        target.day + 1,
+        jam,
+      );
+    }
 
     await _jadwalkanDenganCadangan(
       id: id,

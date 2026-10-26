@@ -255,26 +255,32 @@ class StreakService {
       if (h == 0 && kekurangan.isEmpty) continue;
 
       final tanggal = hari(saat).add(Duration(days: h));
+      final DateTime waktu = DateTime(
+        tanggal.year,
+        tanggal.month,
+        tanggal.day,
+        NotificationService.jamPengingatStreak,
+      );
+
       rencana.add(
         PengingatStreak(
           id: NotificationService.idPengingatStreak(h),
-          waktu: DateTime(
-            tanggal.year,
-            tanggal.month,
-            tanggal.day,
-            NotificationService.jamPengingatStreak,
-          ),
+          waktu: waktu,
           judul: runtutanTertinggi > 0
               ? '🔥 Runtutanmu belum tuntas hari ini'
               : '🔥 Yuk mulai runtutan hari ini',
-          // Untuk hari-hari berikutnya kekurangannya belum bisa diketahui,
-          // jadi memakai pesan umum.
           isi: h == 0
               ? _isiPengingatStreak(
                   kekurangan: kekurangan,
                   runtutanTertinggi: runtutanTertinggi,
                 )
-              : _isiPengingatUmum(runtutanTertinggi: runtutanTertinggi),
+              // Untuk hari-hari berikutnya kekurangannya belum bisa diketahui,
+              // jadi memakai pesan umum. Tetap diberi tahu jam berbunyinya,
+              // supaya yang disebut hanya yang masih bisa dikejar.
+              : _isiPengingatUmum(
+                  runtutanTertinggi: runtutanTertinggi,
+                  pada: waktu,
+                ),
         ),
       );
     }
@@ -307,13 +313,32 @@ class StreakService {
   }
 
   /// Isi notifikasi untuk hari-hari BERIKUTNYA (kekurangannya belum diketahui).
-  static String _isiPengingatUmum({required int runtutanTertinggi}) {
-    if (runtutanTertinggi > 0) {
-      return 'Runtutan $runtutanTertinggi hari bisa putus kalau hari ini '
-          'terlewat. Lengkapi dzikir pagi & petang serta baca Al-Qur\'an.';
-    }
-    return 'Mulai runtutan hari ini: dzikir pagi & petang serta baca '
-        'Al-Qur\'an.';
+  ///
+  /// Bentuknya tetap pesan UMUM — tidak menyebut apa yang kurang kemarin —
+  /// karena kekurangan hari depan belum bisa diketahui sekarang.
+  ///
+  /// ⚠️ Tetapi yang disebut HANYA yang MASIH BISA DIKEJAR pada jam [pada],
+  /// yaitu jam pengingatnya berbunyi. Dzikir pagi tutup pukul 11:00 sedangkan
+  /// pengingat runtutan berbunyi pukul 16:00, jadi menagih "dzikir pagi" di
+  /// sore hari sama mustahilnya dengan kartu "Runtutan Harian" yang dulu
+  /// menyuruh menyelesaikan dzikir pagi & sore pada pukul 20:28.
+  static String _isiPengingatUmum({
+    required int runtutanTertinggi,
+    required DateTime pada,
+  }) {
+    final List<String> tersisa = <String>[
+      if (DzikirWaktu.masihDalamWaktu(isPagi: true, sekarang: pada))
+        'dzikir pagi',
+      if (DzikirWaktu.masihDalamWaktu(isPagi: false, sekarang: pada))
+        'dzikir petang',
+      'baca Al-Qur\'an',
+    ];
+
+    final String pembuka = runtutanTertinggi > 0
+        ? 'Runtutan $runtutanTertinggi hari bisa putus kalau hari ini terlewat.'
+        : 'Mulai runtutan hari ini.';
+
+    return '$pembuka Tinggal ${tersisa.join(' dan ')}.';
   }
 
   // =====================================================================
@@ -334,6 +359,10 @@ class StreakService {
     );
     await _perbaruiRuntutanDzikir();
     await pastikanPengingatStreak();
+
+    // Pengingat dzikir pagi/sore ikut disusun ulang: sesi yang baru saja
+    // tuntas tidak boleh diingatkan lagi hari ini.
+    await perbaruiPengingatDzikir();
   }
 
   /// Apakah dzikir [isPagi] sudah ditandai tuntas hari ini.
@@ -341,6 +370,23 @@ class StreakService {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(isPagi ? _dzikirPagiKey : _dzikirSoreKey) ==
         _formatTanggal(DateTime.now());
+  }
+
+  /// Memasang ulang pengingat dzikir pagi & sore dengan mempertimbangkan apa
+  /// yang SUDAH tuntas hari ini.
+  ///
+  /// Dipakai halaman Dzikir (begitu satu sesi selesai) dan beranda (tiap
+  /// aplikasi dibuka atau kembali ke depan). Keduanya WAJIB lewat sini, tidak
+  /// memanggil `NotificationService.scheduleDzikirReminders()` langsung —
+  /// supaya penanda penyelesaian tidak pernah terlupa dan pengingat tidak
+  /// berbunyi untuk dzikir yang sudah dikerjakan.
+  Future<void> perbaruiPengingatDzikir() async {
+    if (!NotificationService.isSupported) return;
+
+    await NotificationService().scheduleDzikirReminders(
+      pagiSelesai: await dzikirSudahDitandai(isPagi: true),
+      soreSelesai: await dzikirSudahDitandai(isPagi: false),
+    );
   }
 
   /// Apakah dzikir pagi DAN sore sudah tuntas hari ini.

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../config.dart';
@@ -17,7 +18,6 @@ class FawaidhScreen extends StatefulWidget {
 
 class _FawaidhScreenState extends State<FawaidhScreen> {
   List<Map<String, dynamic>> _fawaidhList = [];
-  final Set<int> _expandedIndexes = {};
   bool _isLoading = true;
   String _errorMessage = '';
 
@@ -102,6 +102,17 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
         '— ${item['penulis'] ?? 'Anonim'}';
     Clipboard.setData(ClipboardData(text: text));
     _showSnackBar('Fawaidh disalin ke clipboard');
+  }
+
+  /// Membuka halaman baca untuk satu fawaidh.
+  ///
+  /// Datanya dititipkan lewat `extra` supaya halaman baca langsung tampil
+  /// tanpa menunggu jaringan — daftar ini sudah memegang isi lengkapnya.
+  void _bukaBaca(Map<String, dynamic> item) {
+    final Object? id = item['id'];
+    if (id == null) return;
+
+    context.push(AppRoutes.bacaFawaidh(id), extra: item);
   }
 
   void _showSnackBar(String message) {
@@ -344,17 +355,16 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
     final penulis = (item['penulis'] ?? 'Anonim').toString();
     final isi = (item['isi'] ?? '').toString().trim();
 
-    final isExpanded = _expandedIndexes.contains(index);
-    final isLongText = isi.length > 220;
+    // Penanda "Baca selengkapnya" hanya muncul untuk tulisan panjang — kalau
+    // isinya pendek, ajakan itu hanya menambah keramaian tanpa guna.
+    final bool isLongText = isi.length > 220;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: AppColors.getSurfaceContainerLow(context),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isExpanded ? goldColor.withOpacity(0.5) : surfaceVariant,
-        ),
+        border: Border.all(color: surfaceVariant),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(
@@ -369,17 +379,7 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: isLongText
-              ? () {
-                  setState(() {
-                    if (isExpanded) {
-                      _expandedIndexes.remove(index);
-                    } else {
-                      _expandedIndexes.add(index);
-                    }
-                  });
-                }
-              : null,
+          onTap: () => _bukaBaca(item),
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
@@ -471,36 +471,21 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
                 const SizedBox(height: 14),
 
                 // ===== ISI =====
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeInOut,
-                  alignment: Alignment.topCenter,
-                  child: Text(
-                    isi.isEmpty ? 'Tidak ada isi.' : isi,
-                    maxLines: isExpanded ? null : 4,
-                    overflow: isExpanded
-                        ? TextOverflow.visible
-                        : TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.7,
-                      color: isExpanded ? textColor : subTextColor,
-                    ),
+                Text(
+                  isi.isEmpty ? 'Tidak ada isi.' : isi,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.7,
+                    color: subTextColor,
                   ),
                 ),
 
                 if (isLongText) ...[
                   const SizedBox(height: 8),
                   InkWell(
-                    onTap: () {
-                      setState(() {
-                        if (isExpanded) {
-                          _expandedIndexes.remove(index);
-                        } else {
-                          _expandedIndexes.add(index);
-                        }
-                      });
-                    },
+                    onTap: () => _bukaBaca(item),
                     borderRadius: BorderRadius.circular(8),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -508,7 +493,7 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            isExpanded ? 'Sembunyikan' : 'Baca selengkapnya',
+                            'Baca selengkapnya',
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.bold,
@@ -517,10 +502,8 @@ class _FawaidhScreenState extends State<FawaidhScreen> {
                           ),
                           const SizedBox(width: 4),
                           Icon(
-                            isExpanded
-                                ? Icons.keyboard_arrow_up_rounded
-                                : Icons.keyboard_arrow_down_rounded,
-                            size: 18,
+                            Icons.arrow_forward_rounded,
+                            size: 16,
                             color: goldColor,
                           ),
                         ],

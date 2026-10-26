@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nama & keterangan widget. Dipakai pemilih widget (daftar "Widget" saat
+  menekan lama layar utama) supaya dua widget aplikasi ini bisa dibedakan —
+  tanpa label, keduanya hanya tampil sebagai nama aplikasi.
+-->
+<resources>
+    <string name="widget_sholat_nama">Jadwal Sholat</string>
+    <string name="widget_sholat_ket">Jam sholat hari ini beserta penanda waktu berikutnya</string>
+
+    <string name="widget_kajian_nama">Jadwal Kajian</string>
+    <string name="widget_kajian_ket">Kajian terdekat: judul, waktu, ustadz, dan lokasi</string>
+</resources>

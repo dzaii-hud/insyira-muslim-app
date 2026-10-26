@@ -9,6 +9,7 @@ import '../router/app_router.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../services/streak_service.dart';
+import '../services/widget_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/responsive_content.dart';
@@ -26,6 +27,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _pengingatDzikir = true;
   bool _pengingatKajian = true;
   bool _pengingatRuntutan = true;
+
+  // Widget layar utama — pengguna boleh memilih salah satu atau keduanya.
+  bool _widgetSholat = true;
+  bool _widgetKajian = true;
   final NotificationService _notificationService = NotificationService();
   final StreakService _streakService = StreakService();
 
@@ -506,6 +511,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _pengingatDzikir = prefs.getBool('enable_dzikir_reminder') ?? true;
       _pengingatKajian = prefs.getBool('enable_kajian_reminder') ?? true;
       _pengingatRuntutan = prefs.getBool('enable_streak_reminder') ?? true;
+      _widgetSholat = prefs.getBool(WidgetService.prefWidgetSholat) ?? true;
+      _widgetKajian = prefs.getBool(WidgetService.prefWidgetKajian) ?? true;
     });
   }
 
@@ -515,7 +522,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setBool('enable_dzikir_reminder', value);
     if (mounted) setState(() => _pengingatDzikir = value);
 
-    await _notificationService.scheduleDzikirReminders();
+    // Lewat StreakService supaya sesi yang sudah tuntas hari ini tidak ikut
+    // diingatkan walaupun pengingatnya baru dinyalakan kembali.
+    await _streakService.perbaruiPengingatDzikir();
     await _loadStatusNotifikasi();
 
     if (!mounted) return;
@@ -547,6 +556,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
       value
           ? 'Pengingat jadwal kajian diaktifkan'
           : 'Pengingat jadwal kajian dimatikan',
+    );
+  }
+
+  /// Menyalakan/mematikan widget jadwal sholat di layar utama.
+  Future<void> _toggleWidgetSholat(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(WidgetService.prefWidgetSholat, value);
+    if (mounted) setState(() => _widgetSholat = value);
+
+    // Saat dimatikan, data lama dihapus supaya widget tidak terus memajang
+    // jam sholat yang sudah lewat.
+    if (!value) await WidgetService.kosongkanJadwalSholat();
+
+    if (!mounted) return;
+    _showSnackBar(
+      value
+          ? 'Widget jadwal sholat aktif — jadwal terisi saat Home dimuat'
+          : 'Widget jadwal sholat dimatikan',
+    );
+  }
+
+  /// Menyalakan/mematikan widget jadwal kajian terdekat di layar utama.
+  Future<void> _toggleWidgetKajian(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(WidgetService.prefWidgetKajian, value);
+    if (mounted) setState(() => _widgetKajian = value);
+
+    if (!value) await WidgetService.kosongkanKajian();
+
+    if (!mounted) return;
+    _showSnackBar(
+      value
+          ? 'Widget jadwal kajian aktif — diisi otomatis saat Home dimuat'
+          : 'Widget jadwal kajian dimatikan',
     );
   }
 
@@ -900,6 +943,123 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
 
             const SizedBox(height: 16),
+
+            // ===================== SECTION WIDGET =====================
+            // Hanya di Android: widget layar utama belum dibuat untuk platform
+            // lain, jadi menampilkan pilihannya di sana cuma membingungkan.
+            if (WidgetService.didukung) ...[
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Theme.of(context).dividerColor),
+                ),
+                child: Column(
+                  children: [
+                    // --- Penjelasan singkat cara memasang ---
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.widgets_rounded,
+                            size: 18,
+                            color: AppColors.getGoldLeaf(context),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Mau jadwal di layar utama? Pilih widget yang '
+                              'kamu suka — boleh salah satu, boleh dua-duanya. '
+                              'Setelah dinyalakan di sini, tekan lama layar '
+                              'utama → Widget → Insyira, lalu tarik widget-nya.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.5,
+                                color: AppColors.getOnSurfaceVariant(context),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // --- Widget jadwal sholat ---
+                    SwitchListTile(
+                      title: Row(
+                        children: [
+                          Icon(
+                            Icons.schedule_rounded,
+                            color: AppColors.getGoldLeaf(context),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Widget Jadwal Sholat',
+                            style: TextStyle(
+                              color: AppColors.getTextPrimary(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Text(
+                        'Jam sholat hari ini beserta penanda waktu berikutnya '
+                        'di layar utama',
+                        style: TextStyle(
+                          color: AppColors.getOnSurfaceVariant(context),
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                      value: _widgetSholat,
+                      onChanged: _toggleWidgetSholat,
+                      activeThumbColor: AppColors.getGoldLeaf(context),
+                    ),
+
+                    Divider(
+                      height: 1,
+                      color: Theme.of(context).dividerColor,
+                      indent: 16,
+                      endIndent: 16,
+                    ),
+
+                    // --- Widget jadwal kajian ---
+                    SwitchListTile(
+                      title: Row(
+                        children: [
+                          Icon(
+                            Icons.campaign_rounded,
+                            color: AppColors.getGoldLeaf(context),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Widget Jadwal Kajian',
+                            style: TextStyle(
+                              color: AppColors.getTextPrimary(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Text(
+                        'Kajian mendatang: judul, waktu, ustadz, dan lokasi',
+                        style: TextStyle(
+                          color: AppColors.getOnSurfaceVariant(context),
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                      value: _widgetKajian,
+                      onChanged: _toggleWidgetKajian,
+                      activeThumbColor: AppColors.getGoldLeaf(context),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+            ],
 
             // ===================== SECTION ADZAN =====================
             Container(

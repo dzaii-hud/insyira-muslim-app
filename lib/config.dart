@@ -55,6 +55,17 @@ class AppConfig {
     'GOOGLE_WEB_CLIENT_ID',
   );
 
+  /// Alamat aplikasi web Insyira.
+  ///
+  /// Dipakai untuk menyusun tautan yang dibagikan ke orang lain. Tautan itu
+  /// harus membuka versi WEB, bukan aplikasi: penerimanya belum tentu sudah
+  /// memasang aplikasi ini, dan tautan khusus aplikasi tidak akan membuka
+  /// apa pun di HP mereka.
+  static const String webBaseUrl = String.fromEnvironment(
+    'WEB_BASE_URL',
+    defaultValue: 'https://insyiramuslimapp.pusatoleolehpekanbaru.id',
+  );
+
   // =====================================================================
   // NILAI DARI config.json (runtime)
   // =====================================================================

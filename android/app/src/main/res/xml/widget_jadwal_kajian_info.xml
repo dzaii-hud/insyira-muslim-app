@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pengaturan widget jadwal kajian.
+
+  `updatePeriodMillis` hanya menggambar ulang dari data yang sudah tersimpan
+  di perangkat — bukan mengambil data baru dari internet.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:description="@string/widget_kajian_ket"
+    android:initialLayout="@layout/widget_jadwal_kajian"
+    android:minHeight="110dp"
+    android:minWidth="180dp"
+    android:previewImage="@drawable/widget_kajian_pratinjau"
+    android:previewLayout="@layout/widget_jadwal_kajian_pratinjau"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="2"
+    android:targetCellWidth="3"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen"
+    tools:targetApi="31" />

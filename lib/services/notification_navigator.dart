@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../router/app_router.dart';
 import '../widgets/app_shell.dart';
@@ -100,14 +99,24 @@ class NotificationNavigator {
     context.go('${AppRoutes.home}?tab=$tab');
   }
 
-  /// Membuka video YouTube di aplikasi YouTube / peramban.
+  /// Membuka pemutar kajian DI DALAM aplikasi.
+  ///
+  /// Isi notifikasi hanya membawa ID videonya, jadi judul & nama kanal tidak
+  /// ikut terkirim. Halaman pemutar yang akan melengkapinya sendiri dari
+  /// server.
   static Future<void> _bukaYouTube(String videoId) async {
-    if (videoId.isEmpty) return;
-    final Uri url = Uri.parse('https://www.youtube.com/watch?v=$videoId');
-    try {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('[Navigasi] Gagal membuka $url: $e');
+    final String id = videoId.trim();
+    if (id.isEmpty) return;
+
+    final NavigatorState? navigator = appNavigatorKey.currentState;
+    if (navigator == null) {
+      // Navigator belum siap (aplikasi baru dibuka dan masih di splash).
+      debugPrint('[Navigasi] Navigator belum siap, video $id ditunda');
+      return;
     }
+
+    navigator.context.push(
+      AppRoutes.tontonVideo(videoId: id, siaranLangsung: true),
+    );
   }
 }

@@ -374,14 +374,37 @@ void main() {
         );
 
         // Entri [0] = hari ini, [1] = besok.
-        expect(hasil[1].isi, contains('dzikir pagi & petang'));
+        // Kekurangan KHUSUS besok belum bisa diketahui sekarang, jadi tidak
+        // boleh menyebut "ayat" — tetapi bentuk "Tinggal ..." tetap dipakai.
+        expect(hasil[1].isi, contains('Tinggal'));
         expect(
           hasil[1].isi,
-          isNot(contains('Tinggal')),
+          isNot(contains('ayat')),
           reason: 'kekurangan besok belum bisa diketahui hari ini',
         );
+        // Dzikir petang masih terbuka pukul 16:00, jadi tetap disebut.
+        expect(hasil[1].isi, contains('dzikir petang'));
       },
     );
+
+    test('pengingat sore TIDAK menagih dzikir pagi yang sudah tutup 11:00', () {
+      final hasil = rencana(runtutanTertinggi: 12);
+
+      // Pengingat runtutan selalu berbunyi pukul 16:00 — lebih lambat dari
+      // batas dzikir pagi (11:00).
+      expect(NotificationService.jamPengingatStreak, greaterThan(11));
+
+      // Mulai dari entri [1] (= besok). Entri [0] memakai `kekurangan` yang
+      // diisi pemanggil, bukan pesan umum, jadi tidak diperiksa di sini.
+      for (final PengingatStreak p in hasil.skip(1)) {
+        expect(
+          p.isi,
+          isNot(contains('dzikir pagi')),
+          reason: 'dzikir pagi tutup 11:00, pengingatnya baru berbunyi sore',
+        );
+        expect(p.isi, contains('12 hari'));
+      }
+    });
 
     test('ID unik, berurutan, dan tidak menabrak notifikasi lain', () {
       final hasil = rencana();

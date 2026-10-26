@@ -10,10 +10,20 @@ import 'package:insyira_muslim_app/widgets/streak_card.dart';
 /// adalah **RenderFlex overflow** — kalau ada isi yang tidak muat, Flutter
 /// melempar error saat `pumpWidget` dan tesnya langsung gagal.
 void main() {
+  /// Pukul 08:00 — dzikir pagi DAN petang dua-duanya masih terbuka.
+  ///
+  /// ⚠️ Waktu ini WAJIB dipasok ke kartu. Tanpa itu, keterangan dzikir
+  /// berubah sendiri menurut jam berapa tesnya dijalankan (setelah 11:00
+  /// dzikir pagi tutup, setelah 18:00 tutup keduanya) dan tesnya gagal
+  /// secara acak. Itu bukan teori: kartu ini sempat menulis "selesaikan
+  /// dzikir pagi & sore" pada pukul 20:28.
+  final DateTime pagiHari = DateTime(2026, 10, 5, 8);
+
   Future<void> render(
     WidgetTester tester, {
     required double lebar,
     required RingkasanStreak ringkasan,
+    DateTime? sekarang,
   }) async {
     // Ukuran HP terkecil yang realistis (360 dp) sampai tablet.
     tester.view.physicalSize = Size(lebar, 900);
@@ -25,7 +35,10 @@ void main() {
         home: Scaffold(
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: StreakCard(ringkasan: ringkasan),
+            child: StreakCard(
+              ringkasan: ringkasan,
+              sekarang: sekarang ?? pagiHari,
+            ),
           ),
         ),
       ),
@@ -135,5 +148,70 @@ void main() {
 
     expect(find.text('pagi & sore selesai'), findsOneWidget);
     expect(find.byIcon(Icons.check_circle_rounded), findsNWidgets(2));
+  });
+
+  // --- Kartu wajib sadar jam: jangan menyuruh yang mustahil ---
+
+  testWidgets('sebut dzikir pagi TERLEWAT kalau batas 11:00 sudah lewat', (
+    tester,
+  ) async {
+    await render(
+      tester,
+      lebar: 400,
+      // 13:00 — dzikir pagi sudah tutup, petang masih terbuka.
+      sekarang: DateTime(2026, 10, 5, 13),
+      ringkasan: ringkasan(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('pagi terlewat · sore belum'), findsOneWidget);
+    expect(
+      find.textContaining('Waktu dzikir pagi sudah lewat'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('dzikir petang'), findsOneWidget);
+    // Bunyi lama menyuruh "Selesaikan dzikir pagi & sore" — itu mustahil.
+    expect(find.textContaining('Selesaikan dzikir pagi & sore'), findsNothing);
+  });
+
+  testWidgets('pukul 20:28 tidak lagi menyuruh dzikir pagi & sore', (
+    tester,
+  ) async {
+    // Jam persis dari tangkapan layar tester 5 Okt 2026.
+    await render(
+      tester,
+      lebar: 400,
+      sekarang: DateTime(2026, 10, 5, 20, 28),
+      ringkasan: ringkasan(),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('terlewat: pagi & sore'), findsOneWidget);
+    expect(
+      find.textContaining('sudah lewat (pagi 11:00, petang 18:00)'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('dzikir dilanjut besok'), findsOneWidget);
+    // Tidak boleh menyuruh mengejar dzikir yang sudah tutup.
+    expect(find.textContaining('Selesaikan dzikir pagi'), findsNothing);
+    expect(find.textContaining('Selesaikan dzikir petang'), findsNothing);
+  });
+
+  testWidgets('tidak meluber di semua keadaan waktu', (tester) async {
+    for (final DateTime saat in <DateTime>[
+      DateTime(2026, 10, 5, 8),
+      DateTime(2026, 10, 5, 13),
+      DateTime(2026, 10, 5, 20, 28),
+    ]) {
+      for (final double lebar in <double>[360, 400, 900]) {
+        await render(
+          tester,
+          lebar: lebar,
+          sekarang: saat,
+          ringkasan: ringkasan(),
+        );
+        await tester.pumpAndSettle();
+      }
+    }
   });
 }

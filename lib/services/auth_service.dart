@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -84,6 +85,63 @@ class AuthService {
   }
 
   // =====================================================================
+  // LOGIN LEWAT PENGALIHAN BROWSER (khusus versi web)
+  // =====================================================================
+
+  /// Menyimpan sesi dari token yang dikirim backend lewat pengalihan browser.
+  ///
+  /// Dipakai khusus di web: setelah user memilih akun Google, backend
+  /// mengalihkan browser ke aplikasi dengan `?token=...`
+  /// (lihat `finishBrowserLogin()` di `Api\AuthController`).
+  ///
+  /// Pengalihan itu hanya membawa token — tanpa data user — jadi datanya
+  /// diambil menyusul dari `/auth/user`.
+  ///
+  /// ⚠️ Beda dengan [loginWithEmail] dkk yang lewat jalur API biasa.
+  Future<Map<String, dynamic>> simpanSesiDariToken(String tokenAwal) async {
+    final String token = tokenAwal.trim();
+    if (token.isEmpty) {
+      throw AuthException('Server tidak mengirim token login.');
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenKey, token);
+
+    // Kalau pengambilan data user gagal (mis. jaringan putus), sesi TETAP
+    // disimpan — token-nya sudah sah, dan Home masih bisa memakainya.
+    final user = await ambilPengguna();
+    await prefs.setString(_userKey, json.encode(user ?? {}));
+    return user ?? <String, dynamic>{};
+  }
+
+  /// Mengambil data user yang sedang login dari server.
+  ///
+  /// Mengembalikan null kalau tidak login atau server tidak menjawab.
+  Future<Map<String, dynamic>?> ambilPengguna() async {
+    final token = await getToken();
+    if (token == null) return null;
+
+    try {
+      final response = await http
+          .get(
+            Uri.parse('${AppConfig.apiBaseUrl}/auth/user'),
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(_timeout);
+
+      if (response.statusCode == 200 && response.body.isNotEmpty) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('Gagal mengambil data user: $e');
+    }
+    return null;
+  }
+
+  // =====================================================================
   // SESI
   // =====================================================================
 
@@ -106,6 +164,21 @@ class AuthService {
   }
 
   Future<bool> isLoggedIn() async => (await getToken()) != null;
+
+  /// Apakah akun yang sedang masuk terdaftar sebagai ustadz.
+  ///
+  /// Dipakai untuk memutuskan apakah menu "Fawaidh Saya" perlu ditampilkan —
+  /// hanya akun ustadz yang boleh mengisi fawaidh-nya sendiri. Penandanya
+  /// diatur pengurus lewat panel admin.
+  ///
+  /// Datanya ikut terbarui sendiri lewat [verifySession] yang mengambil ulang
+  /// data user dari server setiap aplikasi dibuka. Jadi begitu pengurus
+  /// menandai akun, menunya muncul tanpa perlu login ulang.
+  Future<bool> isUstadz() async {
+    final Map<String, dynamic>? pengguna = await getUser();
+
+    return pengguna?['is_ustadz'] == true;
+  }
 
   /// Header siap pakai untuk request ke endpoint yang butuh login.
   Future<Map<String, String>> authHeaders() async {
@@ -180,7 +253,31 @@ class AuthService {
       }
     }
 
+    await _keluarDariGoogle();
+
     await _clearSession();
+  }
+
+  /// Keluar juga dari akun Google di perangkat (khusus Android / iOS).
+  ///
+  /// Tanpa ini, keluar dari aplikasi TIDAK berarti keluar dari akun Google.
+  /// Google masih mengingat akun yang pernah memberi izin, sehingga saat user
+  /// menekan "Login dengan Google" lagi, akun itu langsung dipakai **tanpa
+  /// menampilkan pilihan akun** — user jadi tidak bisa masuk memakai akun lain.
+  ///
+  /// Kegagalannya sengaja didiamkan: keluar dari aplikasi harus tetap berhasil
+  /// walau pembersihan akun Google gagal.
+  Future<void> _keluarDariGoogle() async {
+    // Di web tidak ada sesi Google milik aplikasi yang perlu dibersihkan
+    // (login web memakai pengalihan halaman), dan `signOut()` memang sudah
+    // usang di web.
+    if (kIsWeb) return;
+
+    try {
+      await GoogleSignIn().signOut();
+    } catch (e) {
+      debugPrint('Gagal keluar dari akun Google: $e');
+    }
   }
 
   // =====================================================================

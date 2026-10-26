@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 import '../theme/app_theme.dart';
 import '../widgets/kajian_card_background.dart';
+import '../widgets/kajian_detail_sheet.dart';
 
 class KajianScreen extends StatefulWidget {
   const KajianScreen({super.key});
@@ -468,7 +469,26 @@ class _KajianScreenState extends State<KajianScreen> {
   // =====================================================================
   // FEATURED CARD
   // =====================================================================
-  Widget _buildFeaturedCard(BuildContext context, Kajian kajian) {
+  /// Membungkus kartu dengan area ketuk menuju rincian kajian.
+  ///
+  /// Dipisah dari kartunya supaya tampilan kartu tidak perlu diubah sama sekali
+  /// hanya untuk menambahkan ketukan.
+  Widget _beriKetuk(BuildContext context, Kajian kajian, Widget kartu) {
+    return Semantics(
+      button: true,
+      label: 'Buka rincian ${kajian.judul}',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => bukaRincianKajian(context, kajian),
+        child: kartu,
+      ),
+    );
+  }
+
+  Widget _buildFeaturedCard(BuildContext context, Kajian kajian) =>
+      _beriKetuk(context, kajian, _kartuFeatured(context, kajian));
+
+  Widget _kartuFeatured(BuildContext context, Kajian kajian) {
     final hasPhoto = _hasPhoto(kajian);
     final isLive = _isKajianOngoing(kajian);
 
@@ -655,7 +675,10 @@ class _KajianScreenState extends State<KajianScreen> {
   // =====================================================================
   // REGULAR CARD
   // =====================================================================
-  Widget _buildRegularCard(BuildContext context, Kajian kajian) {
+  Widget _buildRegularCard(BuildContext context, Kajian kajian) =>
+      _beriKetuk(context, kajian, _kartuReguler(context, kajian));
+
+  Widget _kartuReguler(BuildContext context, Kajian kajian) {
     final hasPhoto = _hasPhoto(kajian);
     final isToday = kajian.tanggal == _todayStr;
     final isLive = _isKajianOngoing(kajian);
@@ -1144,7 +1167,12 @@ class Kajian {
   final String jamMulai;
   final String jamSelesai;
   final String lokasi;
+  final String deskripsi;
   final String? fotoUstadz;
+
+  /// Poster selebaran dari panitia, tampil utuh di halaman rincian.
+  /// Bisa null untuk kajian lama yang belum punya poster.
+  final String? fotoPoster;
 
   Kajian({
     required this.tanggal,
@@ -1153,7 +1181,9 @@ class Kajian {
     required this.jamMulai,
     required this.jamSelesai,
     required this.lokasi,
+    this.deskripsi = '',
     this.fotoUstadz,
+    this.fotoPoster,
   });
 
   factory Kajian.fromJson(Map<String, dynamic> json) {
@@ -1179,7 +1209,9 @@ class Kajian {
       jamMulai: jamMulaiClean,
       jamSelesai: jamSelesaiClean,
       lokasi: json['lokasi'] ?? '',
+      deskripsi: json['deskripsi'] ?? '',
       fotoUstadz: json['foto_ustadz_url'] ?? json['foto_ustadz'],
+      fotoPoster: json['foto_poster_url'] ?? json['foto_poster'],
     );
   }
 }

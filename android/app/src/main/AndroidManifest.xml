@@ -58,6 +58,32 @@
             </intent-filter>
         </receiver>
         
+        <!-- Widget jadwal sholat di layar utama -->
+        <receiver
+            android:name=".JadwalSholatWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_sholat_nama">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_jadwal_sholat_info" />
+        </receiver>
+
+        <!-- Widget jadwal kajian terdekat -->
+        <receiver
+            android:name=".JadwalKajianWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_kajian_nama">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_jadwal_kajian_info" />
+        </receiver>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

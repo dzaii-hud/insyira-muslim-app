@@ -66,6 +66,16 @@
       overflow: hidden;
     }
   </style>
+
+  <!--
+    Pustaka Google Identity Services.
+
+    Dibutuhkan `google_sign_in` versi WEB untuk tombol "Login dengan Google".
+    Sebagian versi paket memuatnya sendiri saat dibutuhkan, tapi dokumentasi
+    paket menganjurkan menambahkannya di sini — dan kalau script ini belum ada
+    saat tombol ditekan, login bisa gagal tanpa pesan yang jelas.
+  -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 
 <body>

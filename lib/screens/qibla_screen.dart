@@ -98,13 +98,75 @@ class _QiblaScreenState extends State<QiblaScreen> {
   /// Di browser pesannya dibedakan supaya user tidak bingung kenapa arah
   /// kiblat mati, padahal di HP bisa jalan.
   Widget _buildSensorUnavailable(BuildContext context, String fallbackText) {
-    return _buildKotakInfo(
+    return _buildPiringanTanpaSensor(
       ikon: Icons.explore_off_outlined,
-      judul: kIsWeb ? 'Kompas tidak tersedia di peramban ini' : fallbackText,
+      judul: kIsWeb ? 'Peramban ini tidak memberi data sensor' : fallbackText,
       pesan: kIsWeb
-          ? 'Buka halaman ini dari HP Android (Chrome) atau iPhone (Safari) '
-                'supaya arah kiblat bisa dibaca otomatis.'
-          : 'Perangkatmu belum mendukung sensor kompas.',
+          ? 'Browser tidak menyediakan data arah hadap. $_penjelasanModeUtara'
+          : 'Perangkatmu belum mendukung sensor kompas. $_penjelasanModeUtara',
+    );
+  }
+
+  /// Kalimat penjelas MODE UTARA, dipakai di beberapa tempat supaya
+  /// bunyinya sama.
+  static const String _penjelasanModeUtara =
+      'Piringan dikunci dengan Utara di atas — samakan Utara di layar dengan '
+      'Utara sebenarnya (pakai kompas HP, atau lihat arah matahari) supaya '
+      'panah emas tepat menunjuk kiblat.';
+
+  /// Piringan kompas dengan UTARA DIKUNCI di atas — dipakai kalau arah hadap
+  /// perangkat tidak bisa dibaca sama sekali.
+  ///
+  /// Arah kiblat TETAP terbaca: [_buildPiringanKompas] yang dipanggil dengan
+  /// `0` berarti "Utara di atas", dan panah kiblatnya otomatis berada di
+  /// derajat yang benar. Yang dibutuhkan user tinggal menyamakan Utara di
+  /// layar dengan Utara sebenarnya.
+  ///
+  /// Sebelumnya di PC hanya muncul kotak buntu *"Kompas hanya tersedia di
+  /// HP"* padahal angka derajatnya sudah dihitung — permintaan manager,
+  /// 5 Okt 2026.
+  Widget _buildPiringanTanpaSensor({
+    required IconData ikon,
+    required String judul,
+    required String pesan,
+  }) {
+    return Column(
+      children: <Widget>[
+        _bingkaiKompas(_buildPiringanKompas(0)),
+        const SizedBox(height: 26),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            children: <Widget>[
+              Icon(
+                ikon,
+                size: 34,
+                color: AppColors.getGoldLeaf(context).withValues(alpha: 0.8),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                judul,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.getTextPrimary(context),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                pesan,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.6,
+                  color: AppColors.getOnSurfaceVariant(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -606,16 +668,23 @@ class _QiblaScreenState extends State<QiblaScreen> {
   /// Kompas versi web.
   ///
   /// `flutter_compass` tidak punya implementasi web, jadi arah dibaca langsung
-  /// dari sensor peramban lewat [WebCompass]. Hanya jalan kalau halaman dibuka
-  /// dari HP — laptop/PC tidak punya sensor kompas.
+  /// dari sensor peramban lewat [WebCompass].
+  ///
+  /// Di HP arahnya mengikuti sensor. Di PC/laptop (dan peramban tanpa sensor)
+  /// arah hadap tidak bisa dibaca sama sekali, jadi dipakai MODE UTARA:
+  /// piringan dikunci dengan Utara di atas dan panah kiblat tetap menunjukkan
+  /// derajat yang benar — lihat [_buildPiringanTanpaSensor].
   Widget _buildCompassWeb() {
+    // PC/laptop tidak punya sensor kompas — dan itu bukan alasan untuk
+    // mematikan fiturnya. Piringan dikunci ke Utara: arah kiblat tetap
+    // terbaca, user tinggal menyamakan Utara di layar dengan Utara asli.
     if (!WebCompass.perambanHp) {
-      return _buildKotakInfo(
+      return _buildPiringanTanpaSensor(
         ikon: Icons.desktop_windows_outlined,
-        judul: 'Kompas hanya tersedia di HP',
+        judul: 'Mode Utara (tanpa sensor)',
         pesan:
-            'Buka halaman ini dari HP Android atau iPhone untuk memakai '
-            'penunjuk arah kiblat. Laptop/PC tidak punya sensor kompas.',
+            'PC/laptop tidak punya sensor kompas, jadi arah hadapmu tidak '
+            'bisa dibaca. $_penjelasanModeUtara',
       );
     }
 
@@ -657,12 +726,12 @@ class _QiblaScreenState extends State<QiblaScreen> {
     }
 
     if (_sensorWebKosong) {
-      return _buildKotakInfo(
+      return _buildPiringanTanpaSensor(
         ikon: Icons.explore_off_outlined,
         judul: 'Sensor kompas tidak terdeteksi',
         pesan:
-            'HP ini sepertinya tidak punya sensor magnetometer. Arah kiblat '
-            'tetap bisa dilihat dari angka derajat di bawah.',
+            'HP ini sepertinya tidak punya magnetometer. '
+            '$_penjelasanModeUtara',
       );
     }
 
