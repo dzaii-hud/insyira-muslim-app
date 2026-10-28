@@ -6,7 +6,7 @@ import 'package:insyira_muslim_app/widgets/sira_layer.dart';
 import 'package:insyira_muslim_app/widgets/sira_mascot.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Menguji aturan "kapan Sira muncul".
+/// Menguji aturan "kapan Sira muncul" dan perilaku geser/tekan-lama.
 ///
 /// Aturan ini yang menentukan maskot terasa menemani atau mengganggu, dan
 /// salah satunya tidak terlihat di layar: Sira harus benar-benar **keluar dari
@@ -14,14 +14,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// pembaca layar masih bisa memfokuskan tombol yang tidak kelihatan.
 void main() {
   setUp(() {
-    // Penghitung "sudah dimatikan pengguna" disimpan di SharedPreferences.
-    // Tanpa tiruan ini, `setAktif` menunggu saluran platform yang tidak ada di
-    // lingkungan tes — dan tesnya menggantung, bukan gagal.
+    // Pilihan pengguna disimpan di SharedPreferences. Tanpa tiruan ini,
+    // `setAktif` menunggu saluran platform yang tidak ada di lingkungan tes —
+    // dan tesnya menggantung, bukan gagal.
     SharedPreferences.setMockInitialValues(<String, Object>{});
 
     SiraPendamping.instance.aktif.value = true;
     SiraPendamping.instance.adaLapisanDiAtas.value = false;
-    SiraPendamping.instance.rute.value = '';
+    SiraPendamping.instance.laporkanHalaman('');
     SiraPendamping.instance.laporkanTabHome(0);
     SiraPendamping.instance.posisi.value = null;
 
@@ -30,29 +30,34 @@ void main() {
     SiraPendamping.instance.pengenalanSelesai.value = true;
   });
 
-  /// Memompa lapisan Sira lalu memindahkannya ke halaman [rute].
-  ///
-  /// Rute diset SETELAH pump pertama: `SiraLayer` membaca alamat router saat
-  /// dibuat, dan di tes ini routernya belum pernah berpindah halaman.
-  Future<void> pumpDiRute(
+  /// Memompa lapisan Sira lalu memindahkannya ke halaman [halaman].
+  Future<void> pumpDiHalaman(
     WidgetTester tester,
-    String rute, {
+    String halaman, {
     int tab = 0,
-    Widget? mediaQuery,
   }) async {
-    Widget lapisan = SiraLayer(child: const Scaffold(body: SizedBox.expand()));
-    if (mediaQuery != null) lapisan = mediaQuery;
-
-    await tester.pumpWidget(MaterialApp(home: lapisan));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SiraLayer(child: const Scaffold(body: SizedBox.expand())),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 300));
 
-    SiraPendamping.instance.rute.value = rute;
+    SiraPendamping.instance.laporkanHalaman(halaman);
     SiraPendamping.instance.laporkanTabHome(tab);
     await tester.pump(const Duration(milliseconds: 300));
   }
 
+  /// Gelembung Sira (bukan gambar lenteranya) — bagian yang posisinya diatur.
+  Finder gelembungSira() => find
+      .ancestor(
+        of: find.byType(SiraMascot),
+        matching: find.byType(GestureDetector),
+      )
+      .first;
+
   testWidgets('muncul di halaman Home', (WidgetTester tester) async {
-    await pumpDiRute(tester, '/home');
+    await pumpDiHalaman(tester, HalamanSira.home);
 
     expect(find.byType(SiraMascot), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -61,9 +66,8 @@ void main() {
   testWidgets('muncul dengan label tips tab yang sedang dibuka', (
     WidgetTester tester,
   ) async {
-    await pumpDiRute(tester, '/home', tab: 3);
+    await pumpDiHalaman(tester, HalamanSira.home, tab: 3);
 
-    expect(find.byType(SiraMascot), findsOneWidget);
     expect(
       find.bySemanticsLabel('Sira: ${kTipsSiraHome[3]!.judul}'),
       findsOneWidget,
@@ -73,7 +77,7 @@ void main() {
   testWidgets('tidak muncul di halaman baca Al-Quran', (
     WidgetTester tester,
   ) async {
-    await pumpDiRute(tester, '/surah/2');
+    await pumpDiHalaman(tester, 'surah-detail');
 
     expect(find.byType(SiraMascot), findsNothing);
   });
@@ -81,7 +85,7 @@ void main() {
   testWidgets('tidak muncul saat dimatikan dari Pengaturan', (
     WidgetTester tester,
   ) async {
-    await pumpDiRute(tester, '/home');
+    await pumpDiHalaman(tester, HalamanSira.home);
     expect(find.byType(SiraMascot), findsOneWidget);
 
     await SiraPendamping.instance.setAktif(false);
@@ -93,7 +97,7 @@ void main() {
   testWidgets('menghilang saat ada lembar bawah di atas halaman', (
     WidgetTester tester,
   ) async {
-    await pumpDiRute(tester, '/settings');
+    await pumpDiHalaman(tester, HalamanSira.pengaturan);
     expect(find.byType(SiraMascot), findsOneWidget);
 
     SiraPendamping.instance.adaLapisanDiAtas.value = true;
@@ -105,45 +109,53 @@ void main() {
   testWidgets('menghilang saat papan tombol terbuka', (
     WidgetTester tester,
   ) async {
-    await pumpDiRute(
-      tester,
-      '/home',
-      mediaQuery: const MediaQuery(
-        data: MediaQueryData(
-          viewInsets: EdgeInsets.only(bottom: 320),
-          size: Size(400, 800),
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(
+            viewInsets: EdgeInsets.only(bottom: 320),
+            size: Size(400, 800),
+          ),
+          child: SiraLayer(child: Scaffold(body: SizedBox.expand())),
         ),
-        child: SiraLayer(child: Scaffold(body: SizedBox.expand())),
       ),
     );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    SiraPendamping.instance.laporkanHalaman(HalamanSira.home);
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byType(SiraMascot), findsNothing);
   });
 
-  testWidgets('ketukan tidak membuat aplikasi error ', (
+  testWidgets('ketukan membuka gulungan tips tanpa error', (
     WidgetTester tester,
   ) async {
-    await pumpDiRute(tester, '/home');
+    await pumpDiHalaman(tester, HalamanSira.home);
 
     await tester.tap(find.byType(SiraMascot));
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
 
     expect(tester.takeException(), isNull);
   });
 
-  /// Gelembung Sira (bukan gambar lenteranya) — bagian yang posisinya diatur
-  /// oleh lapisan ini.
-  Finder gelembungSira() => find
-      .ancestor(
-        of: find.byType(SiraMascot),
-        matching: find.byType(GestureDetector),
-      )
-      .first;
+  testWidgets('tekan lama membuka menu tanpa error', (
+    WidgetTester tester,
+  ) async {
+    await pumpDiHalaman(tester, HalamanSira.home);
+
+    await tester.longPress(find.byType(SiraMascot));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('bisa digeser, dan posisi barunya diingat', (
     WidgetTester tester,
   ) async {
-    await pumpDiRute(tester, '/home');
+    await pumpDiHalaman(tester, HalamanSira.home);
 
     final Offset awal = tester.getTopLeft(gelembungSira());
 
@@ -163,10 +175,9 @@ void main() {
   testWidgets('posisi tersimpan dipakai lagi saat halaman dibuka', (
     WidgetTester tester,
   ) async {
-    // Posisi di tengah layar, disimpan sebagai pecahan.
     SiraPendamping.instance.posisi.value = const Offset(0.3, 0.4);
 
-    await pumpDiRute(tester, '/home');
+    await pumpDiHalaman(tester, HalamanSira.home);
 
     final Rect kotak = tester.getRect(gelembungSira());
     final Size layar = tester.view.physicalSize / tester.view.devicePixelRatio;
@@ -176,25 +187,13 @@ void main() {
   });
 
   testWidgets('tidak bisa digeser keluar layar', (WidgetTester tester) async {
-    await pumpDiRute(tester, '/home');
+    await pumpDiHalaman(tester, HalamanSira.home);
 
-    // Digeser jauh melewati tepi kanan & atas.
     await tester.drag(gelembungSira(), const Offset(2000, -2000));
     await tester.pump(const Duration(milliseconds: 400));
 
     final Rect kotak = tester.getRect(gelembungSira());
     expect(kotak.left, greaterThanOrEqualTo(0));
     expect(kotak.top, greaterThanOrEqualTo(0));
-  });
-
-  testWidgets('tekan lama tidak membuat aplikasi error', (
-    WidgetTester tester,
-  ) async {
-    await pumpDiRute(tester, '/home');
-
-    await tester.longPress(find.byType(SiraMascot));
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(tester.takeException(), isNull);
   });
 }

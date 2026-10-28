@@ -15,6 +15,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/responsive_content.dart';
 import '../widgets/sira_mascot.dart';
+import '../widgets/sira_pengenalan.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -970,34 +971,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Theme.of(context).dividerColor),
               ),
-              child: SwitchListTile(
-                title: Row(
-                  children: [
-                    const SiraMascot(ukuran: 26, animasi: false),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Sira, maskot pendamping',
-                        style: TextStyle(
-                          color: AppColors.getTextPrimary(context),
-                          fontWeight: FontWeight.w600,
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    title: Row(
+                      children: [
+                        const SiraMascot(ukuran: 26, animasi: false),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Sira, maskot pendamping',
+                            style: TextStyle(
+                              color: AppColors.getTextPrimary(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      'Lentera kecil di layar yang menjelaskan fitur di '
+                      'halaman yang sedang kamu buka.',
+                      style: TextStyle(
+                        color: AppColors.getOnSurfaceVariant(context),
+                        fontSize: 12,
+                        height: 1.4,
                       ),
                     ),
-                  ],
-                ),
-                subtitle: Text(
-                  'Lentera kecil di pojok layar yang menjelaskan fitur di '
-                  'halaman yang sedang kamu buka.',
-                  style: TextStyle(
-                    color: AppColors.getOnSurfaceVariant(context),
-                    fontSize: 12,
-                    height: 1.4,
+                    value: _siraAktif,
+                    onChanged: _toggleSira,
+                    activeThumbColor: AppColors.getGoldLeaf(context),
                   ),
-                ),
-                value: _siraAktif,
-                onChanged: _toggleSira,
-                activeThumbColor: AppColors.getGoldLeaf(context),
+                  Divider(
+                    height: 1,
+                    color: Theme.of(context).dividerColor,
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+                  // Perkenalan hanya muncul sekali di awal, jadi harus ada
+                  // jalan untuk melihatnya lagi tanpa memasang ulang aplikasi.
+                  ListTile(
+                    leading: Icon(
+                      Icons.auto_awesome,
+                      color: AppColors.getGoldLeaf(context),
+                    ),
+                    title: Text(
+                      'Kenalan lagi dengan Sira',
+                      style: TextStyle(
+                        color: AppColors.getTextPrimary(context),
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Lihat ulang halaman perkenalan maskot',
+                      style: TextStyle(
+                        color: AppColors.getOnSurfaceVariant(context),
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.getOnSurfaceVariant(context),
+                    ),
+                    onTap: () => bukaPengenalanSira(context),
+                  ),
+                ],
               ),
             ),
 

@@ -11,6 +11,22 @@ class TipsSira {
   final List<String> poin;
 }
 
+/// Nama route halaman yang ditemani Sira.
+///
+/// Harus sama dengan `name:` pada [appRouter]. Halaman yang tidak ada di sini
+/// (surah, pemutar video, login, splash) sengaja tidak ditemani: di sana
+/// pengguna sedang fokus atau belum ada yang perlu dijelaskan.
+class HalamanSira {
+  HalamanSira._();
+
+  static const String home = 'home';
+  static const String fawaidh = 'fawaidh';
+  static const String fawaidhBaca = 'fawaidh-baca';
+  static const String fawaidhSaya = 'fawaidh-saya';
+  static const String pengaturan = 'settings';
+  static const String tentang = 'tentang';
+}
+
 /// Tips untuk tiap tab di halaman Home.
 ///
 /// Nomornya mengikuti `kNavDestinations` (Home, Quran, Qibla, Kajian, Dzikir).
@@ -24,7 +40,6 @@ const Map<int, TipsSira> kTipsSiraHome = <int, TipsSira>{
           'membaca. Tekan untuk melihat rinciannya.',
       'Di bagian Jadwal Kajian, ketuk kartunya untuk melihat rincian. Kalau '
           'kajian sedang live, ketukan langsung memutar siarannya.',
-      'Pengumuman dari pengurus muncul sebagai pita di bagian paling atas.',
     ],
   ),
   1: TipsSira(
@@ -70,9 +85,9 @@ const Map<int, TipsSira> kTipsSiraHome = <int, TipsSira>{
   ),
 };
 
-/// Tips untuk halaman selain Home, dikunci dengan alamat halamannya.
+/// Tips untuk halaman selain Home, dikunci dengan nama route-nya.
 const Map<String, TipsSira> kTipsSiraHalaman = <String, TipsSira>{
-  AppRoutes.fawaidh: TipsSira(
+  HalamanSira.fawaidh: TipsSira(
     judul: 'Fawaidh',
     poin: <String>[
       'Fawaidh adalah kumpulan faedah ilmu dari kajian, ditulis ringkas supaya '
@@ -81,7 +96,14 @@ const Map<String, TipsSira> kTipsSiraHalaman = <String, TipsSira>{
           'pengaturan ukuran teks di HP-mu.',
     ],
   ),
-  AppRoutes.fawaidhSaya: TipsSira(
+  HalamanSira.fawaidhBaca: TipsSira(
+    judul: 'Membaca Fawaidh',
+    poin: <String>[
+      'Geser ke bawah untuk melanjutkan bacaan.',
+      'Ketuk poster di bagian atas kalau ingin memperbesar gambarnya.',
+    ],
+  ),
+  HalamanSira.fawaidhSaya: TipsSira(
     judul: 'Fawaidh Saya',
     poin: <String>[
       'Halaman ini khusus untuk akun yang terdaftar sebagai ustadz.',
@@ -89,18 +111,18 @@ const Map<String, TipsSira> kTipsSiraHalaman = <String, TipsSira>{
           'terbit.',
     ],
   ),
-  AppRoutes.settings: TipsSira(
+  HalamanSira.pengaturan: TipsSira(
     judul: 'Pengaturan',
     poin: <String>[
       'Notifikasi bisa diatur satu per satu: adzan, pengingat dzikir, jadwal '
           'kajian, dan pengingat runtutan.',
       'Kalau adzan tidak berbunyi, buka kartu Status Notifikasi — di situ '
           'terlihat apakah izin dan penghemat baterai HP menghalanginya.',
-      'Di bagian bawah ada pilihan widget layar utama, dan sakelar untuk '
-          'mematikan Sira.',
+      'Di bagian bawah ada pilihan widget layar utama, sakelar untuk mematikan '
+          'Sira, dan tombol untuk melihat perkenalannya lagi.',
     ],
   ),
-  AppRoutes.about: TipsSira(
+  HalamanSira.tentang: TipsSira(
     judul: 'Tentang Aplikasi',
     poin: <String>[
       'Nomor versi dan nomor build ada di sini — sebutkan keduanya kalau kamu '
@@ -113,22 +135,26 @@ const Map<String, TipsSira> kTipsSiraHalaman = <String, TipsSira>{
 /// Tips yang cocok untuk halaman yang sedang dibuka.
 ///
 /// Mengembalikan `null` kalau halamannya memang tidak ingin ditemani Sira
-/// (mis. halaman baca Al-Qur\'an atau pemutar video).
-TipsSira? cariTipsSira({required String rute, required int tab}) {
-  if (rute == AppRoutes.home) {
+/// (mis. halaman baca Al-Qur'an atau pemutar video).
+TipsSira? cariTipsSira({required String namaHalaman, required int tab}) {
+  if (namaHalaman == HalamanSira.home) {
     return kTipsSiraHome[tab] ?? kTipsSiraHome[0];
   }
 
-  // Halaman baca fawaidh memakai alamat /fawaidh/<id>.
-  if (rute.startsWith('${AppRoutes.fawaidh}/')) {
-    return const TipsSira(
-      judul: 'Membaca Fawaidh',
-      poin: <String>[
-        'Geser ke bawah untuk melanjutkan bacaan.',
-        'Ketuk poster di bagian atas kalau ingin memperbesar gambarnya.',
-      ],
-    );
-  }
+  return kTipsSiraHalaman[namaHalaman];
+}
 
-  return kTipsSiraHalaman[rute];
+/// Menebak nama halaman dari alamat URL.
+///
+/// Hanya dipakai sebagai cadangan untuk halaman PERTAMA saat aplikasi dibuka,
+/// kalau observer belum sempat melapor. Sesudah itu [SiraObserver] yang
+/// menjadi sumber kebenaran.
+String namaHalamanDariJalur(String jalur) {
+  if (jalur == AppRoutes.home) return HalamanSira.home;
+  if (jalur == AppRoutes.fawaidh) return HalamanSira.fawaidh;
+  if (jalur.startsWith('${AppRoutes.fawaidh}/')) return HalamanSira.fawaidhBaca;
+  if (jalur == AppRoutes.fawaidhSaya) return HalamanSira.fawaidhSaya;
+  if (jalur == AppRoutes.settings) return HalamanSira.pengaturan;
+  if (jalur == AppRoutes.about) return HalamanSira.tentang;
+  return '';
 }

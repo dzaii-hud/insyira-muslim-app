@@ -40,8 +40,12 @@ class SiraPendamping {
   /// rincian kajian terbaca sebagai kesalahan tampilan, bukan sebagai teman.
   final ValueNotifier<bool> adaLapisanDiAtas = ValueNotifier<bool>(false);
 
-  /// Alamat halaman yang sedang terbuka, mis. `/home`.
-  final ValueNotifier<String> rute = ValueNotifier<String>('');
+  /// Nama halaman yang sedang terbuka, mis. `home` atau `settings`.
+  ///
+  /// Memakai nama route (bukan alamat URL) karena itulah yang tersedia di
+  /// [NavigatorObserver] — satu-satunya sumber yang benar-benar terpicu saat
+  /// halaman dibuka atau ditutup, termasuk lewat `push`.
+  final ValueNotifier<String> namaHalaman = ValueNotifier<String>('');
 
   /// Tab Home yang sedang dibuka (0..4).
   ///
@@ -97,4 +101,10 @@ class SiraPendamping {
 
   /// Dipanggil Home setiap kali tabnya berpindah.
   void laporkanTabHome(int index) => tabHome.value = index;
+
+  /// Dipanggil [SiraObserver] saat halaman berganti.
+  void laporkanHalaman(String nama) {
+    if (namaHalaman.value == nama) return;
+    namaHalaman.value = nama;
+  }
 }

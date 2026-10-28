@@ -1,18 +1,20 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:insyira_muslim_app/router/app_router.dart';
 import 'package:insyira_muslim_app/services/tips_sira.dart';
 
 /// Menguji pemilihan tips maskot Sira.
 ///
 /// Yang dijaga di sini bukan tampilannya, melainkan **isi dan sasaran** tips:
-/// kalau alamat halaman berubah, Sira tidak boleh diam-diam berhenti muncul
-/// (atau menampilkan tips halaman yang salah). Keduanya gagal tanpa suara di
+/// kalau nama route berubah, Sira tidak boleh diam-diam berhenti muncul (atau
+/// menampilkan tips halaman yang salah). Keduanya gagal tanpa suara di
 /// aplikasi — tidak ada error, hanya tips yang tidak pernah muncul.
 void main() {
   group('tips tab Home', () {
     for (int tab = 0; tab < 5; tab++) {
       test('tab $tab punya tips', () {
-        final TipsSira? tips = cariTipsSira(rute: AppRoutes.home, tab: tab);
+        final TipsSira? tips = cariTipsSira(
+          namaHalaman: HalamanSira.home,
+          tab: tab,
+        );
 
         expect(tips, isNotNull);
         expect(tips!.judul, isNotEmpty);
@@ -21,7 +23,10 @@ void main() {
     }
 
     test('nomor tab di luar rentang memakai tips tab pertama', () {
-      final TipsSira? tips = cariTipsSira(rute: AppRoutes.home, tab: 99);
+      final TipsSira? tips = cariTipsSira(
+        namaHalaman: HalamanSira.home,
+        tab: 99,
+      );
 
       expect(tips?.judul, kTipsSiraHome[0]!.judul);
     });
@@ -29,44 +34,54 @@ void main() {
 
   group('tips halaman lain', () {
     test('halaman yang diizinkan punya tips', () {
-      for (final String rute in <String>[
-        AppRoutes.fawaidh,
-        AppRoutes.fawaidhSaya,
-        AppRoutes.settings,
-        AppRoutes.about,
+      for (final String halaman in <String>[
+        HalamanSira.fawaidh,
+        HalamanSira.fawaidhBaca,
+        HalamanSira.fawaidhSaya,
+        HalamanSira.pengaturan,
+        HalamanSira.tentang,
       ]) {
         expect(
-          cariTipsSira(rute: rute, tab: 0),
+          cariTipsSira(namaHalaman: halaman, tab: 0),
           isNotNull,
-          reason: 'Halaman $rute tidak punya tips — Sira tidak akan muncul.',
+          reason: 'Halaman $halaman tidak punya tips — Sira tidak akan muncul.',
         );
       }
     });
 
-    test('halaman baca fawaidh (/fawaidh/<id>) punya tips', () {
-      expect(cariTipsSira(rute: '/fawaidh/12', tab: 0), isNotNull);
-    });
-
     test('halaman baca Al-Quran & pemutar video tidak punya tips', () {
       // Dua halaman ini sengaja tidak ditemani Sira: pengguna sedang fokus.
-      expect(cariTipsSira(rute: '/surah/2', tab: 0), isNull);
-      expect(cariTipsSira(rute: '/tonton/abc123', tab: 0), isNull);
+      expect(cariTipsSira(namaHalaman: 'surah-detail', tab: 0), isNull);
+      expect(cariTipsSira(namaHalaman: 'tonton', tab: 0), isNull);
     });
 
-    test('splash & login tidak punya tips', () {
-      expect(cariTipsSira(rute: AppRoutes.splash, tab: 0), isNull);
-      expect(cariTipsSira(rute: AppRoutes.login, tab: 0), isNull);
+    test('halaman yang belum dikenal tidak punya tips', () {
+      expect(cariTipsSira(namaHalaman: '', tab: 0), isNull);
+      expect(cariTipsSira(namaHalaman: 'splash', tab: 0), isNull);
+      expect(cariTipsSira(namaHalaman: 'login', tab: 0), isNull);
+    });
+  });
+
+  group('nama halaman dari alamat', () {
+    test('alamat yang didukung dikenali', () {
+      expect(namaHalamanDariJalur('/home'), HalamanSira.home);
+      expect(namaHalamanDariJalur('/settings'), HalamanSira.pengaturan);
+      expect(namaHalamanDariJalur('/fawaidh'), HalamanSira.fawaidh);
+      expect(namaHalamanDariJalur('/fawaidh/12'), HalamanSira.fawaidhBaca);
+    });
+
+    test('alamat lainnya menghasilkan kosong', () {
+      expect(namaHalamanDariJalur('/surah/2'), '');
+      expect(namaHalamanDariJalur('/tonton/abc123'), '');
     });
   });
 
   test('tiap poin tips cukup pendek untuk dibaca', () {
-    final Iterable<TipsSira> semua = <TipsSira>[
+    for (final TipsSira tips in <TipsSira>[
       ...kTipsSiraHome.values,
       ...kTipsSiraHalaman.values,
-    ];
-
-    for (final TipsSira tips in semua) {
-      // Tips yang panjang tidak dibaca sampai habis di lembar bawah.
+    ]) {
+      // Tips yang panjang tidak dibaca sampai habis di gulungan.
       expect(tips.poin.length, lessThanOrEqualTo(4), reason: tips.judul);
 
       for (final String poin in tips.poin) {

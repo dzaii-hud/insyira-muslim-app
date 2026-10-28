@@ -2,11 +2,18 @@ import 'package:flutter/widgets.dart';
 
 import 'sira_pendamping.dart';
 
-/// Mengikuti lembar bawah & dialog yang dibuka di atas halaman.
+/// Mengikuti perpindahan halaman dan lapisan yang dibuka di atasnya.
 ///
-/// Sira perlu tahu kapan ada lapisan di atas halaman supaya bisa menyembunyikan
-/// diri. Tanpa ini, maskot mengapung di atas lembar rincian kajian atau di atas
-/// papan tombol — terlihat seperti kesalahan render.
+/// Dua tugasnya:
+///
+/// 1. **Melaporkan halaman yang sedang terbuka.** Memakai [NavigatorObserver],
+///    bukan pendengar router: hanya observer ini yang benar-benar terpicu saat
+///    halaman dibuka lewat `push`/`go` dan saat ditutup kembali. Sebelumnya
+///    lapisan Sira membaca alamat dari router dan tidak ikut berubah saat
+///    halaman surah dibuka — akibatnya maskot tetap tampil di halaman baca.
+///
+/// 2. **Menghitung lapisan di atas halaman** (lembar bawah/dialog), supaya Sira
+///    bisa menyembunyikan diri selama itu.
 ///
 /// [PopupRoute] adalah induk dari `ModalBottomSheetRoute` dan `DialogRoute`,
 /// jadi keduanya tertangkap tanpa perlu menyebut jenisnya satu per satu.
@@ -17,12 +24,22 @@ class SiraObserver extends NavigatorObserver {
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (route is PopupRoute) _ubah(1);
+    if (route is PopupRoute) {
+      _ubah(1);
+      return;
+    }
+    _laporkan(route);
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (route is PopupRoute) _ubah(-1);
+    if (route is PopupRoute) {
+      _ubah(-1);
+      return;
+    }
+
+    // Kembali ke halaman sebelumnya — halaman itulah yang kini terlihat.
+    if (previousRoute != null) _laporkan(previousRoute);
   }
 
   @override
@@ -34,6 +51,11 @@ class SiraObserver extends NavigatorObserver {
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     if (oldRoute is PopupRoute && newRoute is! PopupRoute) _ubah(-1);
     if (newRoute is PopupRoute && oldRoute is! PopupRoute) _ubah(1);
+    if (newRoute != null && newRoute is! PopupRoute) _laporkan(newRoute);
+  }
+
+  void _laporkan(Route<dynamic> route) {
+    SiraPendamping.instance.laporkanHalaman(route.settings.name ?? '');
   }
 
   void _ubah(int selisih) {

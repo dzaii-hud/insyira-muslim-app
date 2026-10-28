@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:insyira_muslim_app/services/tips_sira.dart';
 import 'package:insyira_muslim_app/widgets/sira_mascot.dart';
-import 'package:insyira_muslim_app/widgets/sira_tips_sheet.dart';
+import 'package:insyira_muslim_app/widgets/sira_tips_dialog.dart';
 
-/// Menguji Sira sebagai gambar & lembar tipsnya.
+/// Menguji Sira sebagai gambar & gulungan tipsnya.
 ///
 /// Maskot ini digambar dengan `CustomPainter`, jadi kesalahan yang paling
 /// mungkin terjadi bukan "terlihat jelek" melainkan **crash atau meluber** di
-/// ukuran tertentu — mis. 26 px di Pengaturan dan 64 px di lembar tips. Karena
+/// ukuran tertentu — mis. 26 px di Pengaturan dan 54 px di gulungan tips. Karena
 /// itu tes ini memompa beberapa ukuran sekaligus memeriksa
 /// `tester.takeException()`.
 void main() {
@@ -62,7 +62,7 @@ void main() {
     });
   });
 
-  group('lembar tips', () {
+  group('gulungan tips', () {
     const TipsSira tips = TipsSira(
       judul: 'Jadwal Kajian',
       poin: <String>[
@@ -74,10 +74,10 @@ void main() {
     testWidgets('menampilkan judul & semua poin', (WidgetTester tester) async {
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(body: SiraTipsSheet(tips: tips)),
+          home: Scaffold(body: SiraTipsDialog(tips: tips)),
         ),
       );
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(tester.takeException(), isNull);
       expect(find.text('Jadwal Kajian'), findsOneWidget);
@@ -86,6 +86,25 @@ void main() {
       for (final String poin in tips.poin) {
         expect(find.text(poin), findsOneWidget);
       }
+    });
+
+    testWidgets('animasi gulungan berjalan tanpa error', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(body: SiraTipsDialog(tips: tips)),
+        ),
+      );
+
+      // Beberapa bingkai selama gulungan masih terbuka.
+      for (int i = 0; i < 6; i++) {
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(tester.takeException(), isNull);
+      }
+
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Jadwal Kajian'), findsOneWidget);
     });
 
     testWidgets('tidak meluber di layar sempit dengan huruf besar', (
@@ -99,11 +118,11 @@ void main() {
         MaterialApp(
           home: MediaQuery(
             data: const MediaQueryData(textScaler: TextScaler.linear(1.6)),
-            child: const Scaffold(body: SiraTipsSheet(tips: tips)),
+            child: const Scaffold(body: SiraTipsDialog(tips: tips)),
           ),
         ),
       );
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 600));
 
       expect(tester.takeException(), isNull);
     });

@@ -8,7 +8,7 @@ import '../services/tips_sira.dart';
 import '../theme/app_theme.dart';
 import 'sira_mascot.dart';
 import 'sira_pengenalan.dart';
-import 'sira_tips_sheet.dart';
+import 'sira_tips_dialog.dart';
 
 /// Lapisan tempat Sira menemani pengguna.
 ///
@@ -31,24 +31,20 @@ class _SiraLayerState extends State<SiraLayer> {
   @override
   void initState() {
     super.initState();
-    appRouter.routerDelegate.addListener(_ruteBerubah);
-    _ruteBerubah();
-  }
+    SiraPendamping.instance.namaHalaman.addListener(_tawarkanPengenalan);
 
-  /// Melaporkan alamat halaman ke [SiraPendamping].
-  ///
-  /// Tab Home tidak bisa dibaca dari URL (berpindah tab tidak mengubah alamat),
-  /// jadi di sini hanya alamat yang dilaporkan — Home melaporkan tabnya sendiri.
-  void _ruteBerubah() {
-    final String jalur = appRouter.routerDelegate.currentConfiguration.uri.path;
-    if (jalur.isEmpty) return;
+    // Cadangan untuk halaman PERTAMA: observer biasanya sudah melapor sendiri,
+    // tetapi kalau belum, alamat router dipakai supaya Sira tidak absen di
+    // beranda.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final SiraPendamping sira = SiraPendamping.instance;
+      if (sira.namaHalaman.value.isNotEmpty) return;
 
-    if (SiraPendamping.instance.rute.value != jalur) {
-      SiraPendamping.instance.rute.value = jalur;
-      SiraPendamping.instance.laporkanTabHome(0);
-    }
-
-    _tawarkanPengenalan();
+      final String jalur =
+          appRouter.routerDelegate.currentConfiguration.uri.path;
+      final String nama = namaHalamanDariJalur(jalur);
+      if (nama.isNotEmpty) sira.laporkanHalaman(nama);
+    });
   }
 
   /// Menampilkan perkenalan Sira sekali, saat pengguna pertama kali sampai di
@@ -62,7 +58,7 @@ class _SiraLayerState extends State<SiraLayer> {
     final SiraPendamping sira = SiraPendamping.instance;
     if (sira.pengenalanSelesai.value) return;
     if (!sira.aktif.value) return;
-    if (sira.rute.value != AppRoutes.home) return;
+    if (sira.namaHalaman.value != HalamanSira.home) return;
 
     _sudahTawarkanPengenalan = true;
 
@@ -78,7 +74,7 @@ class _SiraLayerState extends State<SiraLayer> {
 
   @override
   void dispose() {
-    appRouter.routerDelegate.removeListener(_ruteBerubah);
+    SiraPendamping.instance.namaHalaman.removeListener(_tawarkanPengenalan);
     super.dispose();
   }
 
@@ -110,17 +106,7 @@ class _KehadiranSiraState extends State<_KehadiranSira> {
   Offset? _seret;
 
   /// Halaman yang boleh ditemani Sira.
-  ///
-  /// Halaman baca Al-Qur'an dan pemutar video sengaja TIDAK ada di sini: di
-  /// sana pengguna sedang fokus, dan maskot yang melayang justru mengganggu.
-  /// Splash/Login juga tidak — belum ada yang perlu dijelaskan.
-  static const Set<String> _ruteDiizinkan = <String>{
-    AppRoutes.home,
-    AppRoutes.fawaidh,
-    AppRoutes.fawaidhSaya,
-    AppRoutes.settings,
-    AppRoutes.about,
-  };
+  static const Set<String> _ruteDiizinkan = <String>{};
 
   @override
   Widget build(BuildContext context) {
@@ -130,14 +116,14 @@ class _KehadiranSiraState extends State<_KehadiranSira> {
       animation: Listenable.merge(<Listenable>[
         sira.aktif,
         sira.adaLapisanDiAtas,
-        sira.rute,
+        sira.namaHalaman,
         sira.tabHome,
         sira.posisi,
       ]),
       builder: (BuildContext context, Widget? _) {
-        final String rute = sira.rute.value;
+        final String halaman = sira.namaHalaman.value;
         final TipsSira? tips = cariTipsSira(
-          rute: rute,
+          namaHalaman: halaman,
           tab: sira.tabHome.value,
         );
 
@@ -146,19 +132,20 @@ class _KehadiranSiraState extends State<_KehadiranSira> {
         final bool papanTombolTerbuka =
             MediaQuery.viewInsetsOf(context).bottom > 0;
 
+        // Halaman yang tidak punya tips berarti memang tidak ingin ditemani
+        // Sira (surah, pemutar video, login, splash).
         final bool tampil =
             sira.aktif.value &&
             !sira.adaLapisanDiAtas.value &&
             !papanTombolTerbuka &&
-            tips != null &&
-            _bolehDitemani(rute);
+            tips != null;
 
         // Saat tidak tampil, Sira benar-benar keluar dari pohon widget — bukan
         // sekadar transparan — supaya pembaca layar tidak menemukan tombol
         // tak terlihat.
         if (!tampil) return const SizedBox.shrink();
 
-        final Rect area = _area(context, rute);
+        final Rect area = _area(context, halaman);
         final Offset posisi = _posisi(context, area, sira.posisi.value);
 
         return Positioned(
@@ -170,16 +157,14 @@ class _KehadiranSiraState extends State<_KehadiranSira> {
     );
   }
 
-  bool _bolehDitemani(String rute) =>
-      _ruteDiizinkan.contains(rute) || rute.startsWith('${AppRoutes.fawaidh}/');
-
   /// Ruang yang boleh ditempati gelembung.
   ///
   /// Di Home ruang bawahnya dipotong setinggi menu bawah, supaya Sira tidak
   /// pernah menutupi tombol navigasi walaupun digeser ke paling bawah.
-  Rect _area(BuildContext context, String rute) {
+  Rect _area(BuildContext context, String halaman) {
     final MediaQueryData mq = MediaQuery.of(context);
-    final double bawah = mq.padding.bottom + (rute == AppRoutes.home ? 78 : 0);
+    final double bawah =
+        mq.padding.bottom + (halaman == HalamanSira.home ? 78 : 0);
 
     return Rect.fromLTRB(
       _tepi,
@@ -215,7 +200,7 @@ class _KehadiranSiraState extends State<_KehadiranSira> {
 
   void _mulaiSeret(BuildContext context) {
     final SiraPendamping sira = SiraPendamping.instance;
-    final Rect area = _area(context, sira.rute.value);
+    final Rect area = _area(context, sira.namaHalaman.value);
 
     setState(() => _seret = _posisi(context, area, sira.posisi.value));
   }
@@ -224,7 +209,7 @@ class _KehadiranSiraState extends State<_KehadiranSira> {
     final Offset? sekarang = _seret;
     if (sekarang == null) return;
 
-    final Rect area = _area(context, SiraPendamping.instance.rute.value);
+    final Rect area = _area(context, SiraPendamping.instance.namaHalaman.value);
     setState(() => _seret = _batasi(sekarang + detail.delta, area));
   }
 
