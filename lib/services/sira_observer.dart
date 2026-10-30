@@ -55,7 +55,12 @@ class SiraObserver extends NavigatorObserver {
   }
 
   void _laporkan(Route<dynamic> route) {
-    SiraPendamping.instance.laporkanHalaman(route.settings.name ?? '');
+    final String nama = route.settings.name ?? '';
+    // Route tanpa nama tidak boleh menghapus halaman yang sudah dilaporkan —
+    // lebih baik Sira tetap menganggap halaman sebelumnya masih terbuka
+    // daripada ia menghilang tanpa alasan.
+    if (nama.isEmpty) return;
+    SiraPendamping.instance.laporkanHalaman(nama);
   }
 
   void _ubah(int selisih) {

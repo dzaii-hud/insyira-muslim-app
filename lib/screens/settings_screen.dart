@@ -15,6 +15,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_shell.dart';
 import '../widgets/responsive_content.dart';
 import '../widgets/sira_mascot.dart';
+import '../widgets/sira_obrolan_sheet.dart';
 import '../widgets/sira_pengenalan.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -1001,6 +1002,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     value: _siraAktif,
                     onChanged: _toggleSira,
                     activeThumbColor: AppColors.getGoldLeaf(context),
+                  ),
+                  Divider(
+                    height: 1,
+                    color: Theme.of(context).dividerColor,
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+                  // Jalan masuk ke obrolan, supaya fitur ini bisa ditemukan
+                  // tanpa harus tahu bahwa Sira bisa ditekan.
+                  ListTile(
+                    leading: Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: AppColors.getGoldLeaf(context),
+                    ),
+                    title: Text(
+                      'Ngobrol dengan Sira',
+                      style: TextStyle(
+                        color: AppColors.getTextPrimary(context),
+                        fontSize: 14,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Tanya apa saja soal aplikasi ini',
+                      style: TextStyle(
+                        color: AppColors.getOnSurfaceVariant(context),
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.getOnSurfaceVariant(context),
+                    ),
+                    onTap: () => bukaObrolanSira(context),
                   ),
                   Divider(
                     height: 1,

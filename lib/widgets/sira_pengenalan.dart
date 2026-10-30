@@ -60,10 +60,11 @@ class _SiraPengenalanState extends State<SiraPengenalan> {
     ),
     _HalamanPengenalan(
       ikon: Icons.forum_rounded,
-      judul: 'Nanti bisa diajak ngobrol',
+      judul: 'Bisa diajak ngobrol',
       cerita:
-          'Sedang kusiapkan: kamu bisa bertanya bebas tentang aplikasi ini. '
-          'Untuk sekarang, tips singkat dariku dulu, ya.',
+          'Ketuk aku kapan saja untuk bertanya. Aku tahu kamu sedang di '
+          'halaman mana, jadi jawabanku selalu nyambung dengan yang sedang '
+          'kamu lihat — tanpa perlu keluar dari halaman itu.',
     ),
   ];
 

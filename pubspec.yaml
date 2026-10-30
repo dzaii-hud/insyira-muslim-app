@@ -23,7 +23,11 @@ publish_to: 'none'
 # (http://192.168.18.4:8000/api) dan SELURUH data online (kajian, fawaidh,
 # kajian online) kosong di HP tester. ⚠️ JANGAN pernah `flutter build appbundle`
 # tanpa `--dart-define=API_BASE_URL=https://api.pusatoleolehpekanbaru.id/api`.
-version: 1.0.0+11
+# +12 (29 Okt 2026): jadwal kajian diurutkan dari yang terbaru, Sira mengenali
+# halaman Pengaturan/Tentang/pemutar video (dan tampil di pemutar video), serta
+# fitur baru "Obrolan dengan Sira" yang menjawab pertanyaan soal aplikasi
+# sesuai halaman yang sedang dibuka.
+version: 1.0.0+12
 
 environment:
   sdk: ^3.10.4

@@ -70,7 +70,7 @@ void main() {
     expect(find.text('Ketuk aku kalau bingung'), findsOneWidget);
 
     await ketukLanjut(tester);
-    expect(find.text('Nanti bisa diajak ngobrol'), findsOneWidget);
+    expect(find.text('Bisa diajak ngobrol'), findsOneWidget);
     expect(find.text('Mulai pakai Insyira'), findsOneWidget);
   });
 

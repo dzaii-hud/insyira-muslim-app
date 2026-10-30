@@ -7,6 +7,7 @@ import '../services/sira_pendamping.dart';
 import '../services/tips_sira.dart';
 import '../theme/app_theme.dart';
 import 'sira_mascot.dart';
+import 'sira_obrolan_sheet.dart';
 import 'sira_pengenalan.dart';
 import 'sira_tips_dialog.dart';
 
@@ -105,9 +106,6 @@ class _KehadiranSiraState extends State<_KehadiranSira> {
   /// tersimpan kalau jarinya terlepas.
   Offset? _seret;
 
-  /// Halaman yang boleh ditemani Sira.
-  static const Set<String> _ruteDiizinkan = <String>{};
-
   @override
   Widget build(BuildContext context) {
     final SiraPendamping sira = SiraPendamping.instance;
@@ -133,7 +131,7 @@ class _KehadiranSiraState extends State<_KehadiranSira> {
             MediaQuery.viewInsetsOf(context).bottom > 0;
 
         // Halaman yang tidak punya tips berarti memang tidak ingin ditemani
-        // Sira (surah, pemutar video, login, splash).
+        // Sira (surah, login, splash).
         final bool tampil =
             sira.aktif.value &&
             !sira.adaLapisanDiAtas.value &&
@@ -232,7 +230,8 @@ class _KehadiranSiraState extends State<_KehadiranSira> {
     return Semantics(
       button: true,
       label: 'Sira: ${tips.judul}',
-      hint: 'Ketuk untuk tips, geser untuk memindahkan, tekan lama untuk opsi',
+      hint: 'Ketuk untuk tips, geser untuk memindahkan, '
+          'tekan lama untuk obrolan & opsi',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => _bukaTips(tips),
@@ -337,6 +336,25 @@ class _MenuSira extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            ListTile(
+              leading: Icon(Icons.chat_bubble_outline_rounded, color: emas),
+              title: Text(
+                'Ngobrol dengan Sira',
+                style: TextStyle(color: teks, fontSize: 14),
+              ),
+              subtitle: Text(
+                'Tanya apa saja soal aplikasi ini',
+                style: TextStyle(color: redup, fontSize: 11.5),
+              ),
+              onTap: () {
+                final NavigatorState navigator = Navigator.of(context);
+                final BuildContext? konteks =
+                    appNavigatorKey.currentState?.overlay?.context;
+
+                navigator.pop();
+                if (konteks != null) unawaited(bukaObrolanSira(konteks));
+              },
             ),
             ListTile(
               leading: Icon(Icons.restart_alt_rounded, color: emas),

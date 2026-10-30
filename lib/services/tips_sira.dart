@@ -14,8 +14,8 @@ class TipsSira {
 /// Nama route halaman yang ditemani Sira.
 ///
 /// Harus sama dengan `name:` pada [appRouter]. Halaman yang tidak ada di sini
-/// (surah, pemutar video, login, splash) sengaja tidak ditemani: di sana
-/// pengguna sedang fokus atau belum ada yang perlu dijelaskan.
+/// (surah, login, splash) sengaja tidak ditemani: di sana pengguna sedang
+/// fokus membaca atau belum ada yang perlu dijelaskan.
 class HalamanSira {
   HalamanSira._();
 
@@ -25,6 +25,7 @@ class HalamanSira {
   static const String fawaidhSaya = 'fawaidh-saya';
   static const String pengaturan = 'settings';
   static const String tentang = 'tentang';
+  static const String tonton = 'tonton';
 }
 
 /// Tips untuk tiap tab di halaman Home.
@@ -130,12 +131,22 @@ const Map<String, TipsSira> kTipsSiraHalaman = <String, TipsSira>{
       'Ada tautan ke kanal YouTube kajian dan kontak pengurus.',
     ],
   ),
+  HalamanSira.tonton: TipsSira(
+    judul: 'Memutar Video Kajian',
+    poin: <String>[
+      'Video diputar langsung di dalam aplikasi, jadi kamu tidak perlu pindah '
+          'ke YouTube.',
+      'Ketuk tombol layar penuh untuk menonton lebih lebar; tombol kembali '
+          'menutup pemutar.',
+      'Kalau videonya tidak muncul, periksa koneksi internet lalu coba lagi.',
+    ],
+  ),
 };
 
 /// Tips yang cocok untuk halaman yang sedang dibuka.
 ///
 /// Mengembalikan `null` kalau halamannya memang tidak ingin ditemani Sira
-/// (mis. halaman baca Al-Qur'an atau pemutar video).
+/// (mis. halaman baca Al-Qur'an).
 TipsSira? cariTipsSira({required String namaHalaman, required int tab}) {
   if (namaHalaman == HalamanSira.home) {
     return kTipsSiraHome[tab] ?? kTipsSiraHome[0];
@@ -156,5 +167,6 @@ String namaHalamanDariJalur(String jalur) {
   if (jalur == AppRoutes.fawaidhSaya) return HalamanSira.fawaidhSaya;
   if (jalur == AppRoutes.settings) return HalamanSira.pengaturan;
   if (jalur == AppRoutes.about) return HalamanSira.tentang;
+  if (jalur.startsWith('${AppRoutes.tonton}/')) return HalamanSira.tonton;
   return '';
 }

@@ -129,11 +129,7 @@ class _KajianScreenState extends State<KajianScreen> {
           k.judul == featured.judul);
     }).toList();
 
-    list.sort((a, b) {
-      final cmp = a.tanggal.compareTo(b.tanggal);
-      if (cmp != 0) return cmp;
-      return a.jamMulai.compareTo(b.jamMulai);
-    });
+    list.sort(Kajian.urutTerbaruDahulu);
     return list;
   }
 
@@ -144,11 +140,7 @@ class _KajianScreenState extends State<KajianScreen> {
           k.lokasi.toLowerCase().contains(_searchQuery);
     }).toList();
 
-    list.sort((a, b) {
-      final cmp = a.tanggal.compareTo(b.tanggal);
-      if (cmp != 0) return cmp;
-      return a.jamMulai.compareTo(b.jamMulai);
-    });
+    list.sort(Kajian.urutTerbaruDahulu);
     return list;
   }
 
@@ -1185,6 +1177,18 @@ class Kajian {
     this.fotoUstadz,
     this.fotoPoster,
   });
+
+  /// Urutan tampil halaman Jadwal Kajian: yang **paling baru** di atas.
+  ///
+  /// Halaman itu memuat seluruh jadwal yang dikirim panitia, termasuk yang
+  /// sudah lewat. Yang dicari pembaca biasanya kajian yang paling akhir, jadi
+  /// tanggal terbesar didahulukan. Di hari yang sama, jam mulai yang lebih
+  /// akhir juga didahulukan supaya urutannya tetap masuk akal.
+  static int urutTerbaruDahulu(Kajian a, Kajian b) {
+    final int cmp = b.tanggal.compareTo(a.tanggal);
+    if (cmp != 0) return cmp;
+    return b.jamMulai.compareTo(a.jamMulai);
+  }
 
   factory Kajian.fromJson(Map<String, dynamic> json) {
     final String tanggalRaw = json['tanggal']?.toString() ?? '';

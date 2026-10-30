@@ -40,6 +40,7 @@ void main() {
         HalamanSira.fawaidhSaya,
         HalamanSira.pengaturan,
         HalamanSira.tentang,
+        HalamanSira.tonton,
       ]) {
         expect(
           cariTipsSira(namaHalaman: halaman, tab: 0),
@@ -49,10 +50,9 @@ void main() {
       }
     });
 
-    test('halaman baca Al-Quran & pemutar video tidak punya tips', () {
-      // Dua halaman ini sengaja tidak ditemani Sira: pengguna sedang fokus.
+    test('halaman baca Al-Quran tidak punya tips', () {
+      // Halaman ini sengaja tidak ditemani Sira: pengguna sedang fokus membaca.
       expect(cariTipsSira(namaHalaman: 'surah-detail', tab: 0), isNull);
-      expect(cariTipsSira(namaHalaman: 'tonton', tab: 0), isNull);
     });
 
     test('halaman yang belum dikenal tidak punya tips', () {
@@ -66,13 +66,14 @@ void main() {
     test('alamat yang didukung dikenali', () {
       expect(namaHalamanDariJalur('/home'), HalamanSira.home);
       expect(namaHalamanDariJalur('/settings'), HalamanSira.pengaturan);
+      expect(namaHalamanDariJalur('/tentang'), HalamanSira.tentang);
       expect(namaHalamanDariJalur('/fawaidh'), HalamanSira.fawaidh);
       expect(namaHalamanDariJalur('/fawaidh/12'), HalamanSira.fawaidhBaca);
+      expect(namaHalamanDariJalur('/tonton/abc123'), HalamanSira.tonton);
     });
 
     test('alamat lainnya menghasilkan kosong', () {
       expect(namaHalamanDariJalur('/surah/2'), '');
-      expect(namaHalamanDariJalur('/tonton/abc123'), '');
     });
   });
 

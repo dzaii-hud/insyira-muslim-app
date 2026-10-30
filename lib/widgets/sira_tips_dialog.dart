@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../router/app_router.dart';
 import '../services/sira_pendamping.dart';
 import '../services/tips_sira.dart';
 import '../theme/app_theme.dart';
 import 'gulungan_kertas.dart';
 import 'sira_mascot.dart';
+import 'sira_obrolan_sheet.dart';
 
 /// Membuka tips Sira di TENGAH layar, seperti gulungan kertas yang dibuka.
 ///
@@ -99,28 +103,29 @@ class _SiraTipsDialogState extends State<SiraTipsDialog> {
                             ),
                           ),
                         const SizedBox(height: 2),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Icon(
+                        // Jalan masuk ke obrolan. Diletakkan di dalam
+                        // gulungan tips supaya pengguna menemukannya tepat
+                        // saat ia butuh penjelasan lebih lanjut.
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () => _bukaObrolan(context),
+                            icon: const Icon(
                               Icons.chat_bubble_outline_rounded,
-                              size: 14,
-                              color: redup,
+                              size: 17,
                             ),
-                            const SizedBox(width: 9),
-                            Expanded(
-                              child: Text(
-                                'Mau bertanya langsung? Obrolan dengan Sira '
-                                'sedang disiapkan dan akan hadir di pembaruan '
-                                'berikutnya.',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  height: 1.5,
-                                  color: redup,
-                                ),
+                            label: const Text('Tanya Sira'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: emas,
+                              foregroundColor: gelap
+                                  ? const Color(0xFF00120B)
+                                  : Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
                               ),
                             ),
-                          ],
+                          ),
                         ),
                       ],
                     ),
@@ -204,8 +209,19 @@ class _SiraTipsDialogState extends State<SiraTipsDialog> {
     );
   }
 
-  Future<void> _sembunyikan(BuildContext context) async {
+  /// Menutup gulungan tips lalu membuka obrolan.
+  ///
+  /// Lembar baru dibuka lewat [appNavigatorKey] — konteks dialog sudah tidak
+  /// sah sesudah dialognya ditutup.
+  void _bukaObrolan(BuildContext context) {
     final NavigatorState navigator = Navigator.of(context);
+    final BuildContext? konteks = appNavigatorKey.currentState?.overlay?.context;
+    navigator.pop();
+    if (konteks == null) return;
+    unawaited(bukaObrolanSira(konteks));
+  }
+
+  Future<void> _sembunyikan(BuildContext context) async {    final NavigatorState navigator = Navigator.of(context);
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
 
     await SiraPendamping.instance.setAktif(false);
