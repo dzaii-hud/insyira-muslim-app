@@ -16,7 +16,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///    `AndroidScheduleMode.alarmClock` (setara alarm bawaan Android) sehingga
 ///    suara adzan tetap diputar **walaupun aplikasi sedang tidak dibuka**,
 ///    bahkan saat HP dalam mode Doze / hemat baterai.
-///    Suara diambil dari file native `android/app/src/main/res/raw/adzan.mp3`.
+///    Suara diambil dari file native `android/app/src/main/res/raw/adzan.mp3`
+///    (Android) dan `ios/Runner/adzan.caf` (iOS, dipotong 29 detik karena iOS
+///    menolak suara notifikasi di atas 30 detik).
 ///
 /// 2. **Notifikasi Dzikir**
 ///    Ditampilkan langsung (instant) ketika user menyelesaikan dzikir
@@ -63,8 +65,11 @@ class NotificationService {
   /// Nama file native tanpa ekstensi di `android/app/src/main/res/raw/`.
   static const String _azanRawSound = 'adzan';
 
-  /// Nama file suara untuk iOS (harus ditambahkan ke bundle Xcode).
-  static const String _azanIosSound = 'adzan.mp3';
+  /// Nama file suara untuk iOS. Berkas `ios/Runner/adzan.caf` sudah ada di repo
+  /// dan terdaftar di bundle Xcode. Durasinya SENGAJA dipotong 29 detik: iOS
+  /// mengabaikan suara notifikasi kustom yang lebih dari 30 detik dan diam-diam
+  /// memutar suara bawaan.
+  static const String _azanIosSound = 'adzan.caf';
 
   static const String _azanChannelName = 'Suara Adzan';
   static const String _azanChannelDesc = 'Adzan saat masuk waktu sholat';
