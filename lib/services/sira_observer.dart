@@ -65,6 +65,6 @@ class SiraObserver extends NavigatorObserver {
 
   void _ubah(int selisih) {
     _jumlahLapisan = (_jumlahLapisan + selisih).clamp(0, 99);
-    SiraPendamping.instance.adaLapisanDiAtas.value = _jumlahLapisan > 0;
+    SiraPendamping.instance.laporkanLapisan(_jumlahLapisan > 0);
   }
 }

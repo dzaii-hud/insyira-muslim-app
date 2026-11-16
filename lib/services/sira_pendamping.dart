@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Keadaan maskot pendamping "Sira".
@@ -105,6 +106,32 @@ class SiraPendamping {
   /// Dipanggil [SiraObserver] saat halaman berganti.
   void laporkanHalaman(String nama) {
     if (namaHalaman.value == nama) return;
-    namaHalaman.value = nama;
+    _amanDariBuild(() {
+      // Dicek ulang: halaman bisa sudah berganti lagi sebelum frame ini usai.
+      if (namaHalaman.value != nama) namaHalaman.value = nama;
+    });
+  }
+
+  /// Dipanggil [SiraObserver] saat lapisan di atas halaman dibuka atau ditutup.
+  void laporkanLapisan(bool ada) {
+    if (adaLapisanDiAtas.value == ada) return;
+    _amanDariBuild(() => adaLapisanDiAtas.value = ada);
+  }
+
+  /// Menjalankan [ubah] tanpa memicunya di tengah fase build.
+  ///
+  /// [NavigatorObserver] (`didPush`/`didPop`) bisa terpanggil saat Navigator
+  /// sedang membangun widgetnya. Mengubah [ValueNotifier] pada saat itu membuat
+  /// `AnimatedBuilder` yang mendengarkannya memanggil `setState` di fase build,
+  /// dan Flutter melempar "setState() or markNeedsBuild() called during build".
+  /// Menundanya ke akhir frame membuat urutan build tetap bersih.
+  void _amanDariBuild(VoidCallback ubah) {
+    final SchedulerPhase fase = SchedulerBinding.instance.schedulerPhase;
+    if (fase == SchedulerPhase.persistentCallbacks ||
+        fase == SchedulerPhase.midFrameMicrotasks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => ubah());
+      return;
+    }
+    ubah();
   }
 }
