@@ -309,6 +309,33 @@ Catatan: bentuknya **wajib** `self as? UNUserNotificationCenterDelegate`
 gagal compile karena `FlutterAppDelegate` tidak mengumumkan protokol itu di
 header publiknya.
 
+### 6.5 UIScene lifecycle — ✅ sudah beres
+
+iOS 27 **menolak menjalankan** aplikasi yang belum memakai UIScene lifecycle.
+Gejalanya membingungkan: `Xcode build done` berhasil, tapi aplikasi langsung
+mati dan `flutter run` kembali ke prompt tanpa pesan error yang jelas. Kalau
+dibiarkan, yang muncul hanya kotak peringatan:
+
+```
+Your iOS app has not been migrated to the UIScene lifecycle.
+UIScene lifecycle is required on iOS 27 and later.
+```
+
+Repo ini sudah dimigrasikan secara manual (karena `AppDelegate.swift` kita
+sudah dimodifikasi untuk notifikasi, sehingga migrasi otomatis Flutter menolak
+jalan — migrasi otomatis hanya mau menyentuh file yang masih persis sama
+dengan template). Dua perubahannya:
+
+1. `ios/Runner/AppDelegate.swift` → `AppDelegate` memakai
+   `FlutterImplicitEngineDelegate`, dan plugin didaftarkan di
+   `didInitializeImplicitFlutterEngine` (bukan lagi di
+   `didFinishLaunchingWithOptions`).
+2. `ios/Runner/Info.plist` → ditambah `UIApplicationSceneManifest` dengan
+   `UISceneDelegateClassName = FlutterSceneDelegate`.
+
+Jangan hapus keduanya. Kalau nanti `flutter create .` dijalankan ulang atau
+project dibuat dari nol, bagian ini harus dipasang lagi.
+
 ---
 
 ## 7. Uji di iPhone asli
