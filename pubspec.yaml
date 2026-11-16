@@ -77,7 +77,6 @@ flutter:
     - assets/audios/
     - assets/audios/dzikir/pagi/
     - assets/audios/dzikir/sore/
-    - assets/data/
     - assets/fonts/
     - assets/fonts/QCF/
     - assets/dzikir.json
