@@ -220,12 +220,27 @@ dikerjakan di dalam repo**, jadi tinggal satu yang perlu kamu urus sendiri
 
 ### 6.1 Izin kamera — ✅ sudah beres
 
-`ios/Podfile` sudah ada di repo. Bagian `post_install`-nya menyalakan
-`PERMISSION_CAMERA=1`, yang wajib untuk `permission_handler` di iOS. Tanpa
-macro ini, `Permission.camera.request()` di `qibla_screen.dart` selalu
-dijawab "ditolak" sehingga AR Kiblat tidak pernah menyala.
+`ios/Podfile` sudah ada di repo dan `post_install`-nya menyalakan
+`PERMISSION_CAMERA=1` (jalur lama, CocoaPods).
 
-Tidak ada yang perlu kamu lakukan — cukup jalankan `pod install`.
+Tapi sejak Flutter memakai **Swift Package Manager**, `permission_handler_apple`
+dipasang lewat SPM — dan di jalur itu macro **tidak** dibaca dari Podfile.
+Yang dipakai adalah **kunci di `Info.plist`**:
+
+| Kunci `Info.plist` | Izin yang otomatis menyala |
+|---|---|
+| `NSCameraUsageDescription` | `Permission.camera` (AR Kiblat) |
+| `NSLocationWhenInUseUsageDescription` | `Permission.location` |
+
+Keduanya sudah ada di `ios/Runner/Info.plist`, jadi izin kamera aktif di kedua
+jalur tanpa perlu diubah. Jangan hapus kedua kunci itu — kalau dihapus,
+`Permission.camera.request()` akan selalu dijawab "ditolak" tanpa pesan apa pun.
+
+⚠️ Kalau `Info.plist` diubah, hapus sekali cache build supaya SPM membaca ulang:
+
+```bash
+rm -rf ~/Library/Developer/Xcode/DerivedData
+```
 
 Isi `post_install` di repo (untuk referensi):
 
