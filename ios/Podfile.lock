@@ -1,0 +1,34 @@
+PODS:
+  - Flutter (1.0.0)
+  - flutter_compass (0.0.1):
+    - Flutter
+  - flutter_local_notifications (0.0.1):
+    - Flutter
+  - sign_in_with_apple (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - flutter_compass (from `.symlinks/plugins/flutter_compass/ios`)
+  - flutter_local_notifications (from `.symlinks/plugins/flutter_local_notifications/ios`)
+  - sign_in_with_apple (from `.symlinks/plugins/sign_in_with_apple/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  flutter_compass:
+    :path: ".symlinks/plugins/flutter_compass/ios"
+  flutter_local_notifications:
+    :path: ".symlinks/plugins/flutter_local_notifications/ios"
+  sign_in_with_apple:
+    :path: ".symlinks/plugins/sign_in_with_apple/ios"
+
+SPEC CHECKSUMS:
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  flutter_compass: b236ab69b61545cce89fd58527f401a7587d5cc1
+  flutter_local_notifications: ad39620c743ea4c15127860f4b5641649a988100
+  sign_in_with_apple: c5dcc141574c8c54d5ac99dd2163c0c72ad22418
+
+PODFILE CHECKSUM: 09378c5b3a341bdc6f268da5d7fcb2f6f4ebf97a
+
+COCOAPODS: 1.17.0
