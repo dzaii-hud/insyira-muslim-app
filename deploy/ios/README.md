@@ -17,9 +17,20 @@ Yang sudah siap di dalam repo (tidak perlu diurus lagi):
 - `ios/Podfile` + izin kamera iOS (`PERMISSION_CAMERA=1`).
 - Suara notifikasi adzan `ios/Runner/adzan.caf` (29 detik, sudah di bundle).
 - Delegate notifikasi di `AppDelegate.swift`.
+- Sign in with Apple: `ios/Runner/Runner.entitlements` sudah terpasang di
+  ketiga konfigurasi build (Bagian 5.2).
+- Privacy manifest `ios/Runner/PrivacyInfo.xcprivacy` (sudah masuk Resources).
+- `ITSAppUsesNonExemptEncryption = false` — pertanyaan export compliance tidak
+  muncul lagi saat upload.
+- Slot `GIDClientID` + URL scheme Google **sudah ada** di `Info.plist`, masih
+  berisi nilai placeholder.
+- Skrip build rilis: `deploy/ios/build-ipa.sh` (Bagian 8).
 
-Yang **masih manual**: login Google di iOS (Bagian 6.3) — butuh OAuth client
-dari Google Cloud Console milikmu.
+Yang **masih manual**:
+
+- Login Google di iOS (Bagian 6.3) — isi dua nilai placeholder, butuh OAuth
+  client dari Google Cloud Console milikmu.
+- Fitur hapus akun di dalam aplikasi (Bagian 6.6) — syarat App Store.
 
 ---
 
@@ -189,14 +200,24 @@ perlu diganti. Jangan diubah ke `com.example.*` lagi: Apple **menolak** awalan
 itu saat upload ke App Store, dan ID ini harus sama dengan yang nanti dipakai
 di App Store Connect dan OAuth client Google (Bagian 6.3).
 
-### 5.2 Tambah kemampuan "Sign in with Apple"
+### 5.2 "Sign in with Apple" — ✅ sudah beres di repo
 
-Di tab yang sama, klik **+ Capability** → pilih **Sign in with Apple**.
+`ios/Runner/Runner.entitlements` sudah ada dan dipakai oleh ketiga konfigurasi
+build (`CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements`). Di Xcode tidak
+perlu klik **+ Capability** lagi — cukup pilih **Team** di Bagian 5.1, dan
+*Automatically manage signing* akan membuat App ID beserta capability-nya.
 
 Kenapa wajib: tombol "Masuk dengan Apple" di aplikasi memakai library
 `sign_in_with_apple`; tanpa capability ini login Apple langsung gagal di iOS.
 Bonus: Apple mewajibkan Sign in with Apple kalau aplikasi punya login pihak
 ketiga (Google).
+
+⚠️ Capability ini **tidak tersedia** untuk Apple ID gratis. Kalau build dengan
+akun gratis, Xcode berhenti dengan pesan `Provisioning profile doesn't include
+the com.apple.developer.applesignin entitlement`. Untuk sekadar mencoba di
+iPhone sendiri sementara waktu, kosongkan dulu
+`CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;` di `project.pbxproj`
+(boleh dikembalikan setelah keanggotaan Developer Program aktif).
 
 ### 5.3 Versi iOS minimum
 
@@ -291,7 +312,8 @@ Console (yang ada sekarang hanya tipe Web/Android).
 3. **Bundle ID**: `id.insyira.muslimapp` (harus sama persis dengan Bagian 5.1).
 4. Salin **iOS client ID** (bentuknya `xxxx.apps.googleusercontent.com`) dan
    **iOS URL scheme** (kebalikannya, misalnya `com.googleusercontent.apps.xxxx`).
-5. Tempel ke `ios/Runner/Info.plist`, **sebelum** baris `</dict>` terakhir:
+5. Ganti dua nilai placeholder di `ios/Runner/Info.plist` (keduanya sudah ada
+   di dalam `<dict>`, tidak perlu menambah blok baru):
 
 ```xml
 	<key>GIDClientID</key>
@@ -303,11 +325,15 @@ Console (yang ada sekarang hanya tipe Web/Android).
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>ISI_IOS_URL_SCHEME_DI_SINI</string>
+				<string>com.googleusercontent.apps.ISI_IOS_CLIENT_ID_DI_SINI</string>
 			</array>
 		</dict>
 	</array>
 ```
+
+Ganti `ISI_IOS_CLIENT_ID_DI_SINI` dengan bagian depan client ID (tanpa
+`.apps.googleusercontent.com`). Selama masih placeholder, tombol login Google
+di iOS akan gagal — Android dan web tidak terpengaruh.
 
 `serverClientId` untuk backend sudah diisi di `lib/config.dart`
 (client ID tipe Web), jadi tidak perlu diubah.
@@ -351,6 +377,42 @@ dengan template). Dua perubahannya:
 Jangan hapus keduanya. Kalau nanti `flutter create .` dijalankan ulang atau
 project dibuat dari nol, bagian ini harus dipasang lagi.
 
+### 6.6 Hapus akun di dalam aplikasi — ⚠️ belum ada, wajib untuk App Store
+
+Apple (guideline 5.1.1(v)) **menolak** aplikasi yang punya pendaftaran akun
+tapi hanya menyediakan *tautan* ke halaman web untuk menghapus akun. Sekarang
+`AboutScreen` hanya membuka `AppInfo.hapusAkun`
+(`https://api.pusatoleolehpekanbaru.id/hapus-akun.html`), jadi ini akan jadi
+temuan reviewer.
+
+Yang dibutuhkan:
+
+1. **Backend**: endpoint terautentikasi, misalnya `DELETE /api/akun`, yang
+   menghapus user beserta datanya dan mengembalikan 200.
+2. **Aplikasi**: tombol "Hapus akun" di `settings_screen.dart` dengan dialog
+   konfirmasi (sebutkan datanya ikut terhapus), memanggil endpoint itu lewat
+   `AuthService`, lalu logout dan kembali ke layar login.
+
+Halaman web `hapus-akun.html` tetap boleh dipertahankan sebagai penjelasan
+tambahan, tapi tidak bisa menggantikan tombol di dalam aplikasi.
+
+### 6.7 Privacy manifest & export compliance — ✅ sudah beres
+
+Dua berkas/hal yang berhubungan dengan pertanyaan Apple saat upload:
+
+- `ios/Runner/PrivacyInfo.xcprivacy` mendeklarasikan `NSPrivacyTracking = false`,
+  data yang dikumpulkan (nama, email, user ID — semuanya terkait akun, bukan
+  untuk tracking), serta required-reason API yang dipakai
+  (`UserDefaults`, `FileTimestamp`, `SystemBootTime`, `DiskSpace`). Berkas ini
+  sudah masuk ke **Build Phases → Copy Bundle Resources**.
+- `ITSAppUsesNonExemptEncryption = false` di `Info.plist`, karena aplikasi
+  hanya memakai HTTPS standar. Tanpa itu, App Store Connect menanyakan export
+  compliance untuk setiap build.
+
+Kalau nanti menambah SDK/paket baru, periksa apakah manifest-nya perlu
+diperbarui (biasanya paket Flutter sudah membawa `PrivacyInfo.xcprivacy`
+sendiri lewat CocoaPods/SPM).
+
 ---
 
 ## 7. Uji di iPhone asli
@@ -378,7 +440,18 @@ Android — Apple juga menolak nomor build yang sudah pernah dipakai):
 version: 1.0.0+13
 ```
 
-Lalu:
+Cara tercepat, pakai skrip yang sudah ada di repo (naikkan build number
+sekaligus kalau perlu):
+
+```bash
+export GOOGLE_WEB_CLIENT_ID=<client-id-web-yang-dipakai-backend>
+BUILD_NUMBER=14 ./deploy/ios/build-ipa.sh
+```
+
+Skrip itu menjalankan `flutter clean`, `flutter pub get`, `pod install`, lalu
+`flutter build ipa --release` dengan `--dart-define` yang benar.
+
+Kalau ingin manual:
 
 ```bash
 flutter clean

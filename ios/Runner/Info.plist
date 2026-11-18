@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>insyira_muslim_app</string>
+	<string>Insyira Muslim</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -72,6 +72,29 @@
     <string>Aplikasi membutuhkan lokasi untuk menentukan arah Kiblat.</string>
     <key>NSCameraUsageDescription</key>
     <string>Aplikasi membutuhkan kamera untuk fitur AR Kiblat.</string>
-	
+
+	<!-- Aplikasi hanya memakai HTTPS standar, tidak ada kriptografi khusus. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<!--
+	  Login Google di iOS. Ganti dua nilai di bawah dengan milik OAuth client
+	  tipe iOS dari Google Cloud Console, lalu hapus komentar ini.
+	  Nilai masih placeholder selama belum diisi.
+	-->
+	<key>GIDClientID</key>
+	<string>ISI_IOS_CLIENT_ID_DI_SINI.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.ISI_IOS_CLIENT_ID_DI_SINI</string>
+			</array>
+		</dict>
+	</array>
+
 </dict>
 </plist>

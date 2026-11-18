@@ -27,7 +27,7 @@ publish_to: 'none'
 # halaman Pengaturan/Tentang/pemutar video (dan tampil di pemutar video), serta
 # fitur baru "Obrolan dengan Sira" yang menjawab pertanyaan soal aplikasi
 # sesuai halaman yang sedang dibuka.
-version: 1.0.0+12
+version: 1.0.0+13
 
 environment:
   sdk: ^3.10.4
