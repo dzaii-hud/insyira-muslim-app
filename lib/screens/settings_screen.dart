@@ -56,6 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Map<String, dynamic>? _user;
   bool _isLoggedIn = false;
   bool _isLoggingOut = false;
+  bool _isDeletingAccount = false;
 
   // ===== PLAYER ADZAN MANUAL =====
   final AudioPlayer _adzanPlayer = AudioPlayer();
@@ -156,6 +157,99 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     // `go` mengganti seluruh riwayat, jadi setelah keluar user tidak bisa
     // menekan Back untuk kembali ke halaman pengaturan.
+    context.go(AppRoutes.login);
+  }
+
+  /// Konfirmasi lalu hapus akun permanen.
+  ///
+  /// Dialognya sengaja menyebutkan apa saja yang ikut terhapus: App Review
+  /// memeriksa apakah pengguna benar-benar diberi tahu konsekuensinya sebelum
+  /// akun dihapus.
+  Future<void> _confirmHapusAkun() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.getSurfaceContainerLow(dialogContext),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: AppColors.getSurfaceVariant(dialogContext)),
+        ),
+        title: Text(
+          'Hapus Akun Permanen',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: AppColors.getTextPrimary(dialogContext),
+          ),
+        ),
+        content: Text(
+          'Akun dan seluruh data akunmu akan dihapus permanen: nama, email, '
+          'runtutan dzikir, serta catatan fawaidh yang tersimpan di server. '
+          'Tindakan ini tidak bisa dibatalkan.\n\n'
+          'Kamu masih bisa memakai aplikasi sebagai tamu setelahnya.',
+          style: TextStyle(
+            color: AppColors.getOnSurfaceVariant(dialogContext),
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              'Batal',
+              style: TextStyle(
+                color: AppColors.getOnSurfaceVariant(dialogContext),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text(
+              'Hapus Akun',
+              style: TextStyle(
+                color: Colors.redAccent,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _isDeletingAccount = true;
+      _isLoggingOut = true;
+    });
+
+    try {
+      await _authService.hapusAkun();
+      if (!mounted) return;
+      setState(() {
+        _isDeletingAccount = false;
+        _isLoggingOut = false;
+      });
+      _showSnackBar('Akunmu sudah dihapus. Terima kasih sudah memakai Insyira.');
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isDeletingAccount = false;
+        _isLoggingOut = false;
+      });
+      _showSnackBar(e.message, isSuccess: false);
+      return;
+    } catch (e) {
+      debugPrint('Gagal menghapus akun: $e');
+      if (!mounted) return;
+      setState(() {
+        _isDeletingAccount = false;
+        _isLoggingOut = false;
+      });
+      _showSnackBar('Akun gagal dihapus. Coba lagi nanti.', isSuccess: false);
+      return;
+    }
+
+    if (!mounted) return;
     context.go(AppRoutes.login);
   }
 
@@ -845,7 +939,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       width: double.infinity,
                       child: TextButton.icon(
                         onPressed: _isLoggingOut ? null : _confirmLogout,
-                        icon: _isLoggingOut
+                        icon: _isLoggingOut && !_isDeletingAccount
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
@@ -862,6 +956,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           'Keluar Akun',
                           style: TextStyle(
                             color: Colors.redAccent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: _isLoggingOut || _isDeletingAccount
+                            ? null
+                            : _confirmHapusAkun,
+                        icon: _isDeletingAccount
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                Icons.delete_forever_rounded,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                        label: Text(
+                          'Hapus Akun',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
                             fontWeight: FontWeight.w600,
                           ),
                         ),

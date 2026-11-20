@@ -258,6 +258,75 @@ class AuthService {
     await _clearSession();
   }
 
+  /// Menghapus akun pengguna secara permanen dari server, lalu membersihkan
+  /// sesi lokal.
+  ///
+  /// Wajib ada di dalam aplikasi (bukan sekadar tautan ke situs web) karena
+  /// App Store menolak aplikasi berakun yang hanya menyediakan cara hapus akun
+  /// lewat halaman web — lihat pedoman App Review 5.1.1(v).
+  ///
+  /// Berbeda dengan [logout], sesi lokal **tidak** dibersihkan kalau server
+  /// menolak permintaan. Menghapus akun itu merusak, jadi kalau gagal user
+  /// harus tetap login supaya bisa mencoba lagi — bukan dilempar ke luar
+  /// dengan akun yang sebenarnya masih ada.
+  Future<void> hapusAkun() async {
+    final token = await getToken();
+    if (token == null) {
+      throw AuthException('Kamu belum login.');
+    }
+
+    http.Response response;
+    try {
+      response = await http
+          .delete(
+            Uri.parse('${AppConfig.apiBaseUrl}/auth/account'),
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(_timeout);
+    } on TimeoutException {
+      throw AuthException(
+        'Server tidak merespons. Cek koneksi internetmu lalu coba lagi.',
+      );
+    } catch (e) {
+      debugPrint('Gagal menghubungi server: $e');
+      throw AuthException(
+        'Tidak bisa terhubung ke server. Cek koneksi internetmu lalu coba lagi.',
+      );
+    }
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      // Token sudah tidak berlaku; akun mungkin sudah terhapus dari tempat
+      // lain. Sesi lokal dibersihkan juga supaya aplikasi tidak terjebak
+      // memakai token mati.
+      await _clearSession();
+      throw AuthException(
+        'Sesi kamu sudah berakhir. Silakan login ulang untuk menghapus akun.',
+      );
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String pesan =
+          'Akun gagal dihapus (${response.statusCode}). Coba lagi nanti.';
+      if (response.body.isNotEmpty) {
+        try {
+          final body = json.decode(response.body);
+          if (body is Map && body['message'] != null) {
+            pesan = body['message'].toString();
+          }
+        } catch (_) {
+          // Badan respons bukan JSON; pakai pesan bawaan di atas.
+        }
+      }
+      throw AuthException(pesan);
+    }
+
+    await _keluarDariGoogle();
+    await _clearSession();
+  }
+
   /// Keluar juga dari akun Google di perangkat (khusus Android / iOS).
   ///
   /// Tanpa ini, keluar dari aplikasi TIDAK berarti keluar dari akun Google.

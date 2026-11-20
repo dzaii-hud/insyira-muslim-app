@@ -1,6 +1,7 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kIsWeb, kReleaseMode;
 import 'package:http/http.dart' as http;
 
 /// Konfigurasi global aplikasi Insyira.
@@ -44,11 +45,16 @@ class AppConfig {
   /// Kosong kalau tidak diisi saat build/run.
   static const String _envBaseUrl = String.fromEnvironment('API_BASE_URL');
 
-  /// Nilai default untuk development di jaringan lokal.
+  /// Alamat default untuk development di jaringan lokal.
   ///
   /// Dipakai hanya kalau tidak ada `config.json` dan tidak ada
-  /// `--dart-define`. IP ini hanya bisa diakses dari Wi-Fi yang sama.
+  /// `--dart-define`, DAN aplikasi bukan build rilis. IP ini hanya bisa
+  /// diakses dari Wi-Fi yang sama.
   static const String _defaultBaseUrl = 'http://192.168.18.4:8000/api';
+
+  /// Alamat API produksi — jaring pengaman untuk build rilis.
+  static const String _productionBaseUrl =
+      'https://api.pusatoleolehpekanbaru.id/api';
 
   /// Client ID Google tipe **Web application** dari `--dart-define`.
   static const String _envGoogleWebClientId = String.fromEnvironment(
@@ -178,6 +184,23 @@ class AppConfig {
 
     final String dariBuild = _envBaseUrl.trim();
     if (dariBuild.isNotEmpty) return _tanpaGarisMiringAkhir(dariBuild);
+
+    // ⚠️ Build rilis tidak boleh memakai alamat LAN development. Alamat itu
+    // hanya bisa diakses dari Wi-Fi yang sama, jadi di HP pengguna SELURUH
+    // data online kosong dan login gagal — tanpa pesan error apa pun.
+    // Kejadian nyata: AAB Android +9 dibangun tanpa `--dart-define=API_BASE_URL`
+    // sehingga lolos ke tester dalam keadaan tidak berfungsi.
+    //
+    // Versi web tidak terkena aturan ini karena alamatnya dibaca dari
+    // config.json; kalau berkas itu hilang, memakai produksi tetap lebih baik
+    // daripada menembak IP lokal.
+    if (kReleaseMode) {
+      debugPrint(
+        'AppConfig: ⚠️ build rilis tanpa API_BASE_URL — '
+        'memakai alamat produksi ($_productionBaseUrl).',
+      );
+      return _tanpaGarisMiringAkhir(_productionBaseUrl);
+    }
 
     return _tanpaGarisMiringAkhir(_defaultBaseUrl);
   }

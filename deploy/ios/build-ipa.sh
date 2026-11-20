@@ -30,6 +30,17 @@ fi
 echo "▸ Insyira ${versi_nama} (build ${versi_build})"
 echo "▸ API   : ${API_BASE_URL}"
 
+# Login Google di iOS membaca GIDClientID + URL scheme dari Info.plist. Kalau
+# keduanya masih placeholder, tombol "masuk dengan Google" akan gagal tanpa
+# pesan yang jelas di HP pengguna — dan App Review bisa menilainya sebagai
+# fitur rusak. Lebih baik build berhenti di sini.
+if grep -q "ISI_IOS_CLIENT_ID_DI_SINI" ios/Runner/Info.plist; then
+  echo "✗ Info.plist masih memakai placeholder ID Google iOS." >&2
+  echo "  Isi GIDClientID dan CFBundleURLSchemes dengan client ID tipe iOS" >&2
+  echo "  dari Google Cloud Console (lihat deploy/ios/README.md bagian 6.3)." >&2
+  exit 1
+fi
+
 flutter clean
 flutter pub get
 (cd ios && pod install)

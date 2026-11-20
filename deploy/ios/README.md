@@ -30,7 +30,8 @@ Yang **masih manual**:
 
 - Login Google di iOS (Bagian 6.3) — isi dua nilai placeholder, butuh OAuth
   client dari Google Cloud Console milikmu.
-- Fitur hapus akun di dalam aplikasi (Bagian 6.6) — syarat App Store.
+- Endpoint hapus akun di backend (Bagian 6.6) — kode aplikasinya sudah selesai,
+  Laravel-nya yang belum ada.
 
 ---
 
@@ -377,21 +378,58 @@ dengan template). Dua perubahannya:
 Jangan hapus keduanya. Kalau nanti `flutter create .` dijalankan ulang atau
 project dibuat dari nol, bagian ini harus dipasang lagi.
 
-### 6.6 Hapus akun di dalam aplikasi — ⚠️ belum ada, wajib untuk App Store
+### 6.6 Hapus akun di dalam aplikasi — ⚠️ sisi aplikasi sudah, backend belum
 
 Apple (guideline 5.1.1(v)) **menolak** aplikasi yang punya pendaftaran akun
-tapi hanya menyediakan *tautan* ke halaman web untuk menghapus akun. Sekarang
-`AboutScreen` hanya membuka `AppInfo.hapusAkun`
-(`https://api.pusatoleolehpekanbaru.id/hapus-akun.html`), jadi ini akan jadi
-temuan reviewer.
+tapi hanya menyediakan *tautan* ke halaman web untuk menghapus akun.
 
-Yang dibutuhkan:
+**Sisi aplikasi — ✅ sudah selesai:**
 
-1. **Backend**: endpoint terautentikasi, misalnya `DELETE /api/akun`, yang
-   menghapus user beserta datanya dan mengembalikan 200.
-2. **Aplikasi**: tombol "Hapus akun" di `settings_screen.dart` dengan dialog
-   konfirmasi (sebutkan datanya ikut terhapus), memanggil endpoint itu lewat
-   `AuthService`, lalu logout dan kembali ke layar login.
+- `AuthService.hapusAkun()` di `lib/services/auth_service.dart` memanggil
+  `DELETE {API_BASE_URL}/auth/account` dengan token Bearer.
+- Tombol **Hapus Akun** ada di `settings_screen.dart`, tepat di bawah
+  "Keluar Akun", lengkap dengan dialog konfirmasi yang menyebutkan data apa
+  saja yang ikut terhapus.
+- Sesudah berhasil: sesi lokal dibersihkan dan pengguna diarahkan ke layar
+  login. Kalau server menolak, pengguna **tetap** login supaya bisa
+  mencoba lagi.
+
+**Sisi backend — ⚠️ ini yang harus ditambahkan (Laravel):**
+
+```php
+// routes/api.php
+Route::middleware('auth:sanctum')->delete('/auth/account', [AuthController::class, 'hapusAkun']);
+
+// app/Http/Controllers/Api/AuthController.php
+public function hapusAkun(Request $request)
+{
+    $user = $request->user();
+
+    // Hapus data milik user lebih dulu kalau tabelnya tidak memakai
+    // foreign key onDelete('cascade'). Sesuaikan dengan skema yang ada.
+    $user->tokens()->delete();
+    $user->delete();
+
+    return response()->json(['message' => 'Akun berhasil dihapus.']);
+}
+```
+
+Yang perlu dipastikan:
+
+1. Endpoint mengembalikan **200** saat berhasil.
+2. Semua data terkait user (token, catatan fawaidh, runtutan dzikir, dsb.)
+   ikut terhapus — reviewer bisa memeriksa ini.
+3. Endpoint menolak permintaan tanpa token (401), dan **tidak** menghapus
+   akun pengguna lain.
+
+Cara mengujinya sebelum kirim ke App Store:
+
+```bash
+TOKEN=<token-login-dari-aplikasi>
+curl -X DELETE https://api.pusatoleolehpekanbaru.id/api/auth/account \
+  -H "Accept: application/json" \
+  -H "Authorization: Bearer $TOKEN" -i
+```
 
 Halaman web `hapus-akun.html` tetap boleh dipertahankan sebagai penjelasan
 tambahan, tapi tidak bisa menggantikan tombol di dalam aplikasi.
